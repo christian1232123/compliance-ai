@@ -3,87 +3,123 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Compliance Audit</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <title>Audit Compliance AI</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #0d1b2a;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #1b263b;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 500px;
+        }
+        h1 { font-size: 24px; margin-bottom: 8px; color: #4cc9f0; }
+        p { font-size: 14px; color: #e0e1dd; margin-bottom: 24px; }
+        label { font-size: 13px; font-weight: bold; display: block; margin-bottom: 6px; }
+        select, input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 18px;
+            border-radius: 6px;
+            border: 1px solid #415a77;
+            background-color: #0d1b2a;
+            color: white;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #0077b6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #0096c7; }
+        #result { margin-top: 20px; font-size: 14px; padding: 12px; border-radius: 6px; display: none; }
+        .success { background-color: #1b4332; border: 1px solid #2d6a4f; color: #d8f3dc; }
+        .error { background-color: #4a1525; border: 1px solid #800f2f; color: #ffccd5; }
+    </style>
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen p-8">
-    <div class="max-w-4xl mx-auto bg-gray-800 rounded-xl shadow-2xl p-6 border border-gray-700">
-        <h1 class="text-3xl font-bold mb-2 text-indigo-400">Audit Compliance AI</h1>
-        <p class="text-gray-400 mb-6">Carica un documento PDF per generare un report automatico sulle criticità normative.</p>
+<body>
 
-        <form id="uploadForm" class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium mb-1">Standard di Riferimento</label>
-                <select id="standard" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white">
-                    <option value="GDPR & Privacy">GDPR & Normativa Privacy</option>
-                    <option value="Sicurezza sul Lavoro (D.Lgs 81/08)">Sicurezza sul Lavoro</option>
-                    <option value="ISO 27001">ISO 27001 (Sicurezza Informazioni)</option>
-                </select>
-            </div>
+<div class="container">
+    <h1>Audit Compliance AI</h1>
+    <p>Carica un documento PDF per generare un report automatico sulle criticità normative.</p>
+    
+    <form id="uploadForm">
+        <label for="standard">Standard di Riferimento</label>
+        <select id="standard">
+            <option value="GDPR">GDPR & Normativa Privacy</option>
+            <option value="ISO27001">ISO 27001 (Sicurezza informazioni)</option>
+        </select>
 
-            <div>
-                <label class="block text-sm font-medium mb-1">Seleziona Documento PDF</label>
-                <input type="file" id="pdfFile" accept=".pdf" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 text-gray-300" required>
-            </div>
+        <label for="pdfFile">Seleziona Documento PDF</label>
+        <input type="file" id="pdfFile" accept=".pdf" required>
 
-            <button type="submit" id="submitBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 font-semibold py-3 rounded-lg transition duration-200">
-                Avvia Analisi Audit
-            </button>
-        </form>
+        <button type="submit" id="submitBtn">Avvia Analisi Audit</button>
+    </form>
 
-        <div id="loading" class="hidden mt-6 text-center text-indigo-400 animate-pulse font-medium">
-            Analisi del documento in corso con l'IA...
-        </div>
+    <div id="result"></div>
+</div>
 
-        <div id="resultContainer" class="hidden mt-8 p-6 bg-gray-900 rounded-lg border border-gray-700">
-            <h2 class="text-xl font-bold text-emerald-400 mb-4">Report di Audit Generato</h2>
-            <div id="reportContent" class="prose prose-invert max-w-none text-gray-300 space-y-2"></div>
-        </div>
-    </div>
-
-    <script>
-        const form = document.getElementById('uploadForm');
+<script>
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const fileInput = document.getElementById('pdfFile');
         const submitBtn = document.getElementById('submitBtn');
-        const loading = document.getElementById('loading');
-        const resultContainer = document.getElementById('resultContainer');
-        const reportContent = document.getElementById('reportContent');
+        const resultDiv = document.getElementById('result');
+        
+        if (!fileInput.files[0]) return;
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const fileInput = document.getElementById('pdfFile').files[0];
-            const standard = document.getElementById('standard').value;
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
 
-            if (!fileInput) return;
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Analisi in corso con l'IA...";
+        resultDiv.style.display = 'none';
 
-            const formData = new FormData();
-            formData.append('file', fileInput);
+        try {
+            // Usa l'URL relativo invece di localhost
+            const response = await fetch('/analyze', {
+                method: 'POST',
+                body: formData
+            });
 
-            submitBtn.disabled = true;
-            loading.classList.remove('hidden');
-            resultContainer.classList.add('hidden');
+            const data = await response.json();
 
-            try {
-                const response = await fetch(`http://127.0.0.1:8000/analyze-compliance/?standard=${encodeURIComponent(standard)}`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    reportContent.innerHTML = marked.parse(data.report);
-                    resultContainer.classList.remove('hidden');
-                } else {
-                    alert('Errore: ' + data.detail);
-                }
-            } catch (err) {
-                alert('Impossibile connettersi al Server Backend.');
-            } finally {
-                submitBtn.disabled = false;
-                loading.classList.add('hidden');
+            resultDiv.style.display = 'block';
+            if (response.ok) {
+                resultDiv.className = 'success';
+                resultDiv.innerText = data.message || "Analisi completata con successo!";
+            } else {
+                resultDiv.className = 'error';
+                resultDiv.innerText = data.error || "Errore durante l'elaborazione.";
             }
-        });
-    </script>
+        } catch (err) {
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'error';
+            resultDiv.innerText = "Impossibile connettersi al Server Backend.";
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Avvia Analisi Audit";
+        }
+    });
+</script>
+
 </body>
 </html>
