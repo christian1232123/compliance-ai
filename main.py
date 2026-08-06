@@ -1,64 +1,50 @@
-import io
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from PyPDF2 import PdfReader
-from openai import OpenAI
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+import os
+import openai
+import stripe
 
-app = FastAPI(title="AI Compliance Auditor")
+app = FastAPI(title="ComplianceAI SaaS")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Inizializzazione Stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
-# Sostituirai questa stringa con la tua API Key reale di OpenAI
-client = OpenAI(api_key="TUA_API_KEY_HERE")
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    if os.path.exists("index.html"):
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>ComplianceAI is Running!</h1>"
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    pdf_file = io.BytesIO(pdf_bytes)
-    reader = PdfReader(pdf_file)
-    text = ""
-    for page in reader.pages:
-        extracted = page.extract_text()
-        if extracted:
-            text += extracted + "\n"
-    return text
-
-@app.post("/analyze-compliance/")
-async def analyze_compliance(file: UploadFile = File(...), standard: str = "GDPR"):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Il file deve essere un PDF.")
-    
-    pdf_bytes = await file.read()
-    extracted_text = extract_text_from_pdf(pdf_bytes)
-    
-    if len(extracted_text.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Impossibile estrarre testo dal PDF.")
-
-    truncated_text = extracted_text[:12000]
-
-    system_prompt = (
-        f"Sei un auditor ed esperto di compliance legale e normativa ({standard}). "
-        "Analizza il seguente testo ed evidenzia:\n"
-        "1. Eventuali violazioni o punti di non conformità.\n"
-        "2. Livello di rischio (Alto, Medio, Basso).\n"
-        "3. Raccomandazioni pratiche per correggere i problemi scoperti.\n"
-        "Fornisci una risposta formale, sintetica e strutturata in Markdown."
-    )
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Ecco il documento da analizzare:\n\n{truncated_text}"}
-            ],
-            temperature=0.2
+@app.post("/analyze")
+async def analyze_compliance(file: UploadFile = File(...)):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or api_key == "pending_verification":
+        return JSONResponse(
+            status_code=400,
+            content={"error": "La chiave API OpenAI non è ancora configurata o verificata."}
         )
-        report = response.choices[0].message.content
-        return {"filename": file.filename, "standard": standard, "report": report}
-    
+    return {"status": "success", "message": f"File '{file.filename}' ricevuto correttamente."}
+
+@app.post("/create-checkout-session")
+async def create_checkout_session(plan: str = Form(...)):
+    try:
+        domain_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8000")
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'eur',
+                    'product_data': {'name': f'Piano ComplianceAI: {plan}'},
+                    'unit_amount': 2900 if plan == 'pro' else 9900,
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=domain_url + '/?success=true',
+            cancel_url=domain_url + '/?canceled=true',
+        )
+        return {"url": checkout_session.url}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore durante l'analisi AI: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
