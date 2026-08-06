@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Compliance Audit</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto bg-gray-800 rounded-xl shadow-2xl p-6 border border-gray-700">
+        <h1 class="text-3xl font-bold mb-2 text-indigo-400">Audit Compliance AI</h1>
+        <p class="text-gray-400 mb-6">Carica un documento PDF per generare un report automatico sulle criticità normative.</p>
+
+        <form id="uploadForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Standard di Riferimento</label>
+                <select id="standard" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white">
+                    <option value="GDPR & Privacy">GDPR & Normativa Privacy</option>
+                    <option value="Sicurezza sul Lavoro (D.Lgs 81/08)">Sicurezza sul Lavoro</option>
+                    <option value="ISO 27001">ISO 27001 (Sicurezza Informazioni)</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Seleziona Documento PDF</label>
+                <input type="file" id="pdfFile" accept=".pdf" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 text-gray-300" required>
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 font-semibold py-3 rounded-lg transition duration-200">
+                Avvia Analisi Audit
+            </button>
+        </form>
+
+        <div id="loading" class="hidden mt-6 text-center text-indigo-400 animate-pulse font-medium">
+            Analisi del documento in corso con l'IA...
+        </div>
+
+        <div id="resultContainer" class="hidden mt-8 p-6 bg-gray-900 rounded-lg border border-gray-700">
+            <h2 class="text-xl font-bold text-emerald-400 mb-4">Report di Audit Generato</h2>
+            <div id="reportContent" class="prose prose-invert max-w-none text-gray-300 space-y-2"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const resultContainer = document.getElementById('resultContainer');
+        const reportContent = document.getElementById('reportContent');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('pdfFile').files[0];
+            const standard = document.getElementById('standard').value;
+
+            if (!fileInput) return;
+
+            const formData = new FormData();
+            formData.append('file', fileInput);
+
+            submitBtn.disabled = true;
+            loading.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+
+            try {
+                const response = await fetch(`http://127.0.0.1:8000/analyze-compliance/?standard=${encodeURIComponent(standard)}`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    reportContent.innerHTML = marked.parse(data.report);
+                    resultContainer.classList.remove('hidden');
+                } else {
+                    alert('Errore: ' + data.detail);
+                }
+            } catch (err) {
+                alert('Impossibile connettersi al Server Backend.');
+            } finally {
+                submitBtn.disabled = false;
+                loading.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
