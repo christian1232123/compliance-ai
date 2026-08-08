@@ -1,8 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 import os
-import openai
+import io
+from pypdf import PdfReader
+from groq import Groq
 import stripe
 
 app = FastAPI(title="ComplianceAI SaaS")
@@ -19,13 +20,57 @@ async def read_root():
 
 @app.post("/analyze")
 async def analyze_compliance(file: UploadFile = File(...)):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or api_key == "pending_verification":
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
         return JSONResponse(
             status_code=400,
-            content={"error": "La chiave API OpenAI non è ancora configurata o verificata."}
+            content={"error": "La chiave API GROQ_API_KEY non è configurata su Render."}
         )
-    return {"status": "success", "message": f"File '{file.filename}' ricevuto correttamente."}
+
+    try:
+        # 1. Estrazione del testo dal file PDF
+        pdf_bytes = await file.read()
+        pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+        extracted_text = ""
+        for page in pdf_reader.pages:
+            text = page.extract_text()
+            if text:
+                extracted_text += text + "\n"
+
+        if not extracted_text.strip():
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Impossibile estrarre testo dal PDF. Assicurati che non sia una scansione di sole immagini."}
+            )
+
+        # Tranciamo il testo per rimanere nei limiti
+        short_text = extracted_text[:12000]
+
+        # 2. Chiamata all'IA tramite Groq (Llama 3.3)
+        client = Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Sei un auditor esperto di Compliance aziendale e GDPR. Analizza il documento fornito ed evidenzia in modo sintetico: 1) Punti critici o non conformità, 2) Rischi legali/privacy, 3) Raccomandazioni operative."
+                },
+                {
+                    "role": "user",
+                    "content": f"Ecco il testo del documento da analizzare:\n\n{short_text}"
+                }
+            ],
+            temperature=0.3
+        )
+
+        analysis_result = response.choices[0].message.content
+        return {"status": "success", "message": analysis_result}
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Errore durante l'analisi: {str(e)}"}
+        )
 
 @app.post("/create-checkout-session")
 async def create_checkout_session(plan: str = Form(...)):
