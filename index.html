@@ -3,123 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audit Compliance AI</title>
+    <title>ComplianceAI - Audit & Compliance con IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #0d1b2a;
-            color: #ffffff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        .container {
-            background-color: #1b263b;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-            width: 100%;
-            max-width: 500px;
-        }
-        h1 { font-size: 24px; margin-bottom: 8px; color: #4cc9f0; }
-        p { font-size: 14px; color: #e0e1dd; margin-bottom: 24px; }
-        label { font-size: 13px; font-weight: bold; display: block; margin-bottom: 6px; }
-        select, input[type="file"] {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 18px;
-            border-radius: 6px;
-            border: 1px solid #415a77;
-            background-color: #0d1b2a;
-            color: white;
-            box-sizing: border-box;
-        }
-        button {
-            width: 100%;
-            padding: 12px;
-            background-color: #0077b6;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 15px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        button:hover { background-color: #0096c7; }
-        #result { margin-top: 20px; font-size: 14px; padding: 12px; border-radius: 6px; display: none; }
-        .success { background-color: #1b4332; border: 1px solid #2d6a4f; color: #d8f3dc; }
-        .error { background-color: #4a1525; border: 1px solid #800f2f; color: #ffccd5; }
+        .markdown-body h3 { font-size: 1.25rem; font-weight: bold; margin-top: 1rem; margin-bottom: 0.5rem; color: #a7f3d0; }
+        .markdown-body p { margin-bottom: 0.75rem; }
+        .markdown-body ul, .markdown-body ol { margin-left: 1.5rem; margin-bottom: 0.75rem; list-style-type: decimal; }
+        .markdown-body strong { color: #ffffff; }
     </style>
 </head>
-<body>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
 
-<div class="container">
-    <h1>Audit Compliance AI</h1>
-    <p>Carica un documento PDF per generare un report automatico sulle criticità normative.</p>
-    
-    <form id="uploadForm">
-        <label for="standard">Standard di Riferimento</label>
-        <select id="standard">
-            <option value="GDPR">GDPR & Normativa Privacy</option>
-            <option value="ISO27001">ISO 27001 (Sicurezza informazioni)</option>
-        </select>
+    <div class="max-w-3xl w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
+        <h1 class="text-3xl font-bold text-center text-emerald-400 mb-2">Audit Compliance AI</h1>
+        <p class="text-slate-400 text-center mb-8">Carica un documento PDF per generare un report automatico sulle criticità normative.</p>
 
-        <label for="pdfFile">Seleziona Documento PDF</label>
-        <input type="file" id="pdfFile" accept=".pdf" required>
+        <!-- Form caricamento PDF -->
+        <form id="auditForm" class="space-y-6">
+            <div>
+                <label class="block text-sm font-medium mb-2 text-slate-300">Standard di Riferimento</label>
+                <select name="standard" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500">
+                    <option value="gdpr">GDPR & Normativa Privacy</option>
+                    <option value="iso27001">ISO 27001 (Sicurezza Informazioni)</option>
+                    <option value="sicurezza">D.Lgs 81/08 (Sicurezza sul Lavoro)</option>
+                </select>
+            </div>
 
-        <button type="submit" id="submitBtn">Avvia Analisi Audit</button>
-    </form>
+            <div>
+                <label class="block text-sm font-medium mb-2 text-slate-300">Seleziona Documento PDF</label>
+                <input type="file" id="pdfFile" accept="application/pdf" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-3 text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-emerald-500 file:text-slate-900 hover:file:bg-emerald-400 cursor-pointer">
+            </div>
 
-    <div id="result"></div>
-</div>
+            <button type="submit" id="submitBtn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 px-6 rounded-lg transition duration-200 shadow-lg">
+                Avvia Analisi Audit
+            </button>
+        </form>
 
-<script>
-    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
+        <!-- Spinner di caricamento -->
+        <div id="loading" class="hidden text-center my-8">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-400"></div>
+            <p class="text-slate-400 mt-2">Analisi del documento in corso con l'IA...</p>
+        </div>
+
+        <!-- Risultato Audit -->
+        <div id="resultContainer" class="hidden mt-8 p-6 bg-emerald-950/40 border border-emerald-800/50 rounded-xl">
+            <h2 class="text-xl font-bold text-emerald-400 mb-4 border-b border-emerald-800/50 pb-2">Risultato Audit</h2>
+            <div id="resultContent" class="markdown-body text-slate-200 leading-relaxed"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('auditForm');
         const fileInput = document.getElementById('pdfFile');
+        const loading = document.getElementById('loading');
+        const resultContainer = document.getElementById('resultContainer');
+        const resultContent = document.getElementById('resultContent');
         const submitBtn = document.getElementById('submitBtn');
-        const resultDiv = document.getElementById('result');
-        
-        if (!fileInput.files[0]) return;
 
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = fileInput.files[0];
+            if (!file) return;
 
-        submitBtn.disabled = true;
-        submitBtn.innerText = "Analisi in corso con l'IA...";
-        resultDiv.style.display = 'none';
+            const formData = new FormData();
+            formData.append('file', file);
 
-        try {
-            // Usa l'URL relativo invece di localhost
-            const response = await fetch('/analyze', {
-                method: 'POST',
-                body: formData
-            });
+            loading.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50');
 
-            const data = await response.json();
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
 
-            resultDiv.style.display = 'block';
-            if (response.ok) {
-                resultDiv.className = 'success';
-                resultDiv.innerText = data.message || "Analisi completata con successo!";
-            } else {
-                resultDiv.className = 'error';
-                resultDiv.innerText = data.error || "Errore durante l'elaborazione.";
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultContent.innerHTML = marked.parse(data.message);
+                    resultContainer.classList.remove('hidden');
+                } else {
+                    resultContent.innerHTML = `<p class="text-red-400">Errore: ${data.error}</p>`;
+                    resultContainer.classList.remove('hidden');
+                }
+            } catch (err) {
+                resultContent.innerHTML = `<p class="text-red-400">Errore di connessione al server.</p>`;
+                resultContainer.classList.remove('hidden');
+            } finally {
+                loading.classList.add('hidden');
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-50');
             }
-        } catch (err) {
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'error';
-            resultDiv.innerText = "Impossibile connettersi al Server Backend.";
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerText = "Avvia Analisi Audit";
-        }
-    });
-</script>
-
+        });
+    </script>
 </body>
 </html>
