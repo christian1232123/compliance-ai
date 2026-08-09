@@ -18,10 +18,9 @@ app = FastAPI()
 
 DB_PATH = "audit_history.db"
 
-# Sicurezza & JWT Config
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super_secret_jwt_key_compliance_ai")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 giorni
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
@@ -29,7 +28,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # Tabella Utenti
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +36,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Tabella Report con associazione user_id
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS audit_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,10 +57,15 @@ def init_db():
 init_db()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+# Forziamo la versione API v1 per garantire la massima compatibilità
+client = genai.Client(
+    api_key=GEMINI_API_KEY,
+    http_options=types.HttpOptions(api_version="v1")
+) if GEMINI_API_KEY else None
+
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_mock")
 
-# Helper Auth
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -78,17 +80,14 @@ def create_access_token(data: dict):
 
 async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)):
     if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Autenticazione richiesta. Effettua il login."
-        )
+        return None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: int = payload.get("sub")
         if user_id is None:
-            raise HTTPException(status_code=401, detail="Token non valido.")
+            return None
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token non valido o scaduto.")
+        return None
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -97,9 +96,7 @@ async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)):
     user = cursor.fetchone()
     conn.close()
 
-    if user is None:
-        raise HTTPException(status_code=401, detail="Utente non trovato.")
-    return dict(user)
+    return dict(user) if user else None
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -147,7 +144,7 @@ async def analyze_pdf(
     file: UploadFile = File(...),
     standard: str = Form("gdpr"),
     language: str = Form("it"),
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_current_user)
 ):
     if not file.filename.lower().endswith('.pdf'):
         return JSONResponse(status_code=400, content={"error": "Il file deve essere un PDF."})
@@ -162,12 +159,12 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Il file potrebbe essere una scansione immagine."})
 
         extracted_text = extracted_text[:12000]
 
         if not client:
-            return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non trovata su Render."})
+            return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non configurata nelle variabili d'ambiente di Render."})
 
         lang_map = {"it": "Italiano", "en": "English", "es": "Español", "de": "Deutsch"}
         target_lang = lang_map.get(language, "Italiano")
@@ -187,9 +184,9 @@ async def analyze_pdf(
         - "risk_score": numero intero da 0 a 100
         - "risk_level": stringa ("Basso", "Medio", "Alto", "Critico")
         - "summary": breve sintesi (max 2 frasi)
-        - "markdown_report": analisi dettagliata con punti di forza, criticità e raccomandazioni formattata in Markdown
+        - "markdown_report": analisi dettagliata formattata in Markdown
 
-        Testo da analizzare:
+        Testo:
         {extracted_text}
         """
 
@@ -202,15 +199,15 @@ async def analyze_pdf(
         )
 
         result_data = json.loads(response.text)
+        user_id = current_user["id"] if current_user else None
 
-        # Salvataggio nel DB associato all'UTENTE LOGGATO
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO audit_reports (user_id, filename, standard, language, risk_score, risk_level, summary, report_markdown)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            current_user["id"],
+            user_id,
             file.filename,
             target_std,
             target_lang,
@@ -230,15 +227,15 @@ async def analyze_pdf(
         return JSONResponse(status_code=500, content={"error": f"Errore server: {str(e)}"})
 
 @app.get("/history")
-async def get_history(current_user: dict = Depends(get_current_user)):
+async def get_history(current_user: Optional[dict] = Depends(get_current_user)):
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(
-            'SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
-            (current_user["id"],)
-        )
+        if current_user:
+            cursor.execute('SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports WHERE user_id = ? ORDER BY created_at DESC LIMIT 20', (current_user["id"],))
+        else:
+            cursor.execute('SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports WHERE user_id IS NULL ORDER BY created_at DESC LIMIT 20')
         rows = cursor.fetchall()
         conn.close()
         return JSONResponse(content=[dict(row) for row in rows])
@@ -246,37 +243,13 @@ async def get_history(current_user: dict = Depends(get_current_user)):
         return JSONResponse(content=[])
 
 @app.get("/get-report/{report_id}")
-async def get_report_by_id(report_id: int, current_user: dict = Depends(get_current_user)):
+async def get_report_by_id(report_id: int):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM audit_reports WHERE id = ? AND user_id = ?', (report_id, current_user["id"]))
+    cursor.execute('SELECT * FROM audit_reports WHERE id = ?', (report_id,))
     row = cursor.fetchone()
     conn.close()
     if not row:
-        return JSONResponse(status_code=404, content={"error": "Report non trovato o non autorizzato"})
+        return JSONResponse(status_code=404, content={"error": "Report non trovato"})
     return JSONResponse(content=dict(row))
-
-@app.post("/create-checkout-session")
-async def create_checkout_session(plan: str = Form(...)):
-    import stripe
-    stripe.api_key = STRIPE_SECRET_KEY
-    price = 4900 if plan == "pro" else 19900
-    try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            line_items=[{
-                'price_data': {
-                    'currency': 'eur',
-                    'product_data': {'name': f'Piano ComplianceAI {plan.capitalize()}'},
-                    'unit_amount': price,
-                },
-                'quantity': 1,
-            }],
-            mode='payment',
-            success_url='https://compliance-ai-qx5a.onrender.com/?success=true',
-            cancel_url='https://compliance-ai-qx5a.onrender.com/?canceled=true',
-        )
-        return {"url": session.url}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
