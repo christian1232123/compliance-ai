@@ -43,7 +43,7 @@ async def analyze_compliance(file: UploadFile = File(...)):
                 content={"error": "Impossibile estrarre testo dal PDF. Assicurati che non sia una scansione di sole immagini."}
             )
 
-        # Tranciamo il testo per rimanere nei limiti
+        # Limite testo a 12.000 caratteri
         short_text = extracted_text[:12000]
 
         # 2. Chiamata all'IA tramite Groq (Llama 3.3)
@@ -76,13 +76,17 @@ async def analyze_compliance(file: UploadFile = File(...)):
 async def create_checkout_session(plan: str = Form(...)):
     try:
         domain_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8000")
+        
+        # Prezzo in centesimi: 49€ per Pro, 199€ per Enterprise
+        unit_amount = 4900 if plan == 'pro' else 19900
+
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{
                 'price_data': {
                     'currency': 'eur',
-                    'product_data': {'name': f'Piano ComplianceAI: {plan}'},
-                    'unit_amount': 2900 if plan == 'pro' else 9900,
+                    'product_data': {'name': f'Piano ComplianceAI: {plan.capitalize()}'},
+                    'unit_amount': unit_amount,
                 },
                 'quantity': 1,
             }],
