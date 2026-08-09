@@ -3,7 +3,7 @@ import json
 import sqlite3
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from pypdf import PdfReader
 from google import genai
 from google.genai import types
@@ -61,7 +61,7 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione immagine."})
 
         extracted_text = extracted_text[:15000]
 
@@ -93,7 +93,7 @@ async def analyze_pdf(
         """
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"
