@@ -5,3 +5,4 @@ google-genai
 pypdf
 python-docx
 jinja2
+stripe
