@@ -14,25 +14,40 @@
         .markdown-body strong { color: #ffffff; }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-start p-4 py-12">
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-start p-4 py-8">
 
-    <!-- Banner Successo Pagamento -->
-    <div id="successBanner" class="hidden max-w-4xl w-full bg-emerald-900/60 border border-emerald-500 text-emerald-200 p-6 rounded-2xl mb-8 shadow-xl text-center">
-        <h2 class="text-2xl font-bold mb-2">🎉 Pagamento completato con successo!</h2>
-        <p class="text-emerald-300">Grazie per aver scelto ComplianceAI. Il tuo account è ora attivo e puoi procedere con le tue analisi PDF senza limiti.</p>
+    <div class="max-w-4xl w-full flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-emerald-400">ComplianceAI</h1>
+        <div id="userHeader" class="text-sm"></div>
     </div>
 
-    <!-- Banner Annullamento Pagamento -->
-    <div id="cancelBanner" class="hidden max-w-4xl w-full bg-amber-900/60 border border-amber-500 text-amber-200 p-6 rounded-2xl mb-8 shadow-xl text-center">
-        <h2 class="text-xl font-bold mb-1">Pagamento annullato</h2>
-        <p class="text-amber-300">La transazione non è stata completata. Puoi riprovare in qualsiasi momento selezionando uno dei piani sottostanti.</p>
+    <!-- Modale Auth (Login/Registrazione) -->
+    <div id="authBox" class="max-w-md w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700 mb-8">
+        <div class="flex justify-center border-b border-slate-700 pb-4 mb-6 gap-6">
+            <button id="tabLogin" onclick="switchAuthTab('login')" class="text-lg font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1">Accedi</button>
+            <button id="tabRegister" onclick="switchAuthTab('register')" class="text-lg font-bold text-slate-400 hover:text-white pb-1">Registrati</button>
+        </div>
+
+        <form id="authForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1 text-slate-300">E-mail</label>
+                <input type="email" id="authEmail" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1 text-slate-300">Password</label>
+                <input type="password" id="authPassword" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500">
+            </div>
+            <button type="submit" id="authSubmitBtn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 px-6 rounded-lg transition duration-200">
+                Accedi
+            </button>
+        </form>
+        <p id="authError" class="text-red-400 text-sm mt-4 text-center hidden"></p>
     </div>
 
-    <div class="max-w-4xl w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
-        <h1 class="text-3xl font-bold text-center text-emerald-400 mb-2">Audit Compliance AI</h1>
+    <!-- App Principale (Nascosta prima del login) -->
+    <div id="appBox" class="hidden max-w-4xl w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
         <p class="text-slate-400 text-center mb-8">Carica un documento PDF per generare un report automatico sulle criticità normative.</p>
 
-        <!-- Form caricamento PDF -->
         <form id="auditForm" class="space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -64,20 +79,16 @@
             </button>
         </form>
 
-        <!-- Spinner di caricamento -->
         <div id="loading" class="hidden text-center my-8">
             <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-400"></div>
             <p class="text-slate-400 mt-2">Analisi del documento in corso con l'IA...</p>
         </div>
 
-        <!-- Box Errore -->
         <div id="errorBox" class="hidden mt-6 p-4 bg-red-900/50 border border-red-500 text-red-200 rounded-xl text-center">
-            <p id="errorMessage">Si è verificato un errore.</p>
+            <p id="errorMessage"></p>
         </div>
 
-        <!-- Risultato Audit & Risk Score -->
         <div id="resultContainer" class="hidden mt-8 p-6 bg-slate-900/80 border border-slate-700 rounded-xl">
-            
             <div id="exportableArea">
                 <div class="flex flex-col md:flex-row items-center justify-between bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6 gap-6">
                     <div class="text-center md:text-left">
@@ -104,7 +115,6 @@
                 </div>
             </div>
 
-            <!-- Pulsante Download PDF -->
             <div class="mt-6 flex justify-end">
                 <button onclick="downloadPDF()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-5 rounded-lg flex items-center space-x-2 transition shadow">
                     <span>📄 Scarica Report PDF</span>
@@ -112,81 +122,94 @@
             </div>
         </div>
 
-        <!-- Storico Analisi -->
+        <!-- Storico personale -->
         <div class="mt-12 border-t border-slate-700 pt-8">
-            <h2 class="text-2xl font-bold text-white mb-4">📜 Storico delle Analisi</h2>
+            <h2 class="text-2xl font-bold text-white mb-4">📜 Il Tuo Storico Riservato</h2>
             <div id="historyTableContainer" class="overflow-x-auto bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-                <p class="text-slate-400 text-sm text-center">Caricamento storico...</p>
-            </div>
-        </div>
-
-        <!-- Sezione Pricing -->
-        <div id="pricingSection" class="mt-16 border-t border-slate-700 pt-10">
-            <h2 class="text-2xl font-bold text-center text-white mb-2">Scegli il tuo Piano</h2>
-            <p class="text-slate-400 text-center mb-8">Sblocca analisi illimitate e report dettagliati per la tua azienda.</p>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Piano Pro -->
-                <div class="bg-slate-700/50 border border-slate-600 rounded-xl p-6 flex flex-col justify-between hover:border-emerald-500 transition">
-                    <div>
-                        <h3 class="text-xl font-bold text-emerald-400">Piano Pro</h3>
-                        <p class="text-3xl font-extrabold text-white mt-2">€49 <span class="text-sm font-normal text-slate-400">/ una tantum</span></p>
-                        <ul class="text-slate-300 text-sm mt-4 space-y-2">
-                            <li>✓ Fino a 10 analisi PDF/mese</li>
-                            <li>✓ Standard GDPR e ISO27001</li>
-                            <li>✓ Reportistica avanzata</li>
-                        </ul>
-                    </div>
-                    <button onclick="buyPlan('pro')" class="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-2.5 px-4 rounded-lg transition">
-                        Acquista Pro
-                    </button>
-                </div>
-
-                <!-- Piano Enterprise -->
-                <div class="bg-slate-700/50 border border-emerald-500/50 rounded-xl p-6 flex flex-col justify-between relative">
-                    <span class="absolute -top-3 right-4 bg-emerald-500 text-slate-900 text-xs font-bold px-2.5 py-1 rounded-full">Consigliato</span>
-                    <div>
-                        <h3 class="text-xl font-bold text-emerald-400">Piano Enterprise</h3>
-                        <p class="text-3xl font-extrabold text-white mt-2">€199 <span class="text-sm font-normal text-slate-400">/ una tantum</span></p>
-                        <ul class="text-slate-300 text-sm mt-4 space-y-2">
-                            <li>✓ Analisi PDF illimitate</li>
-                            <li>✓ Tutti gli standard di Compliance</li>
-                            <li>✓ Supporto dedicato</li>
-                        </ul>
-                    </div>
-                    <button onclick="buyPlan('enterprise')" class="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-2.5 px-4 rounded-lg transition">
-                        Acquista Enterprise
-                    </button>
-                </div>
+                <p class="text-slate-400 text-sm text-center">Nessuna analisi salvata nel tuo profilo.</p>
             </div>
         </div>
     </div>
 
     <script>
-        let currentReportId = null;
+        let currentAuthMode = 'login';
+        let authToken = localStorage.getItem('compliance_token');
+        let userEmail = localStorage.getItem('compliance_email');
 
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('success') === 'true') {
-            document.getElementById('successBanner').classList.remove('hidden');
-            document.getElementById('pricingSection').classList.add('hidden');
-        } else if (urlParams.get('canceled') === 'true') {
-            document.getElementById('cancelBanner').classList.remove('hidden');
+        checkAuthState();
+
+        function switchAuthTab(mode) {
+            currentAuthMode = mode;
+            document.getElementById('authError').classList.add('hidden');
+            if (mode === 'login') {
+                document.getElementById('tabLogin').className = "text-lg font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1";
+                document.getElementById('tabRegister').className = "text-lg font-bold text-slate-400 hover:text-white pb-1";
+                document.getElementById('authSubmitBtn').innerText = "Accedi";
+            } else {
+                document.getElementById('tabRegister').className = "text-lg font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1";
+                document.getElementById('tabLogin').className = "text-lg font-bold text-slate-400 hover:text-white pb-1";
+                document.getElementById('authSubmitBtn').innerText = "Registrati";
+            }
         }
 
-        const form = document.getElementById('auditForm');
-        const fileInput = document.getElementById('pdfFile');
-        const loading = document.getElementById('loading');
-        const resultContainer = document.getElementById('resultContainer');
-        const resultContent = document.getElementById('resultContent');
-        const submitBtn = document.getElementById('submitBtn');
-        const errorBox = document.getElementById('errorBox');
-        const errorMessage = document.getElementById('errorMessage');
-
-        loadHistory();
-
-        form.addEventListener('submit', async (e) => {
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const file = fileInput.files[0];
+            const email = document.getElementById('authEmail').value;
+            const password = document.getElementById('authPassword').value;
+            const endpoint = currentAuthMode === 'login' ? '/login' : '/register';
+
+            const formData = new FormData();
+            formData.append('email', email);
+            formData.append('password', password);
+
+            try {
+                const res = await fetch(endpoint, { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (res.ok && data.token) {
+                    localStorage.setItem('compliance_token', data.token);
+                    localStorage.setItem('compliance_email', data.email);
+                    authToken = data.token;
+                    userEmail = data.email;
+                    checkAuthState();
+                } else {
+                    document.getElementById('authError').innerText = data.error || "Errore di autenticazione.";
+                    document.getElementById('authError').classList.remove('hidden');
+                }
+            } catch (err) {
+                document.getElementById('authError').innerText = "Errore di connessione.";
+                document.getElementById('authError').classList.remove('hidden');
+            }
+        });
+
+        function logout() {
+            localStorage.removeItem('compliance_token');
+            localStorage.removeItem('compliance_email');
+            authToken = null;
+            userEmail = null;
+            checkAuthState();
+        }
+
+        function checkAuthState() {
+            const authBox = document.getElementById('authBox');
+            const appBox = document.getElementById('appBox');
+            const userHeader = document.getElementById('userHeader');
+
+            if (authToken && userEmail) {
+                authBox.classList.add('hidden');
+                appBox.classList.remove('hidden');
+                userHeader.innerHTML = `<span class="text-slate-300 mr-3">👤 ${userEmail}</span> <button onclick="logout()" class="bg-red-500/20 hover:bg-red-500/40 text-red-300 px-3 py-1 rounded transition text-xs font-semibold">Esci</button>`;
+                loadHistory();
+            } else {
+                authBox.classList.remove('hidden');
+                appBox.classList.add('hidden');
+                userHeader.innerHTML = '';
+            }
+        }
+
+        document.getElementById('auditForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = document.getElementById('pdfFile').files[0];
             if (!file) return;
 
             const formData = new FormData();
@@ -194,72 +217,57 @@
             formData.append('standard', document.getElementById('standardSelect').value);
             formData.append('language', document.getElementById('languageSelect').value);
 
-            loading.classList.remove('hidden');
-            resultContainer.classList.add('hidden');
-            errorBox.classList.add('hidden');
-            submitBtn.disabled = true;
-            submitBtn.classList.add('opacity-50');
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('resultContainer').classList.add('hidden');
+            document.getElementById('errorBox').classList.add('hidden');
 
             try {
                 const response = await fetch('/analyze', {
                     method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
                     body: formData
                 });
 
                 const data = await response.json();
 
                 if (response.ok && !data.error) {
-                    currentReportId = data.report_id;
                     displayReport(data);
                     loadHistory();
                 } else {
-                    showError(data.error || "Errore sconosciuto durante l'analisi.");
+                    showError(data.error || data.detail || "Errore durante l'analisi.");
                 }
             } catch (err) {
-                showError("Errore di connessione al server.");
+                showError("Errore di connessione.");
             } finally {
-                loading.classList.add('hidden');
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('opacity-50');
+                document.getElementById('loading').classList.add('hidden');
             }
         });
 
         function showError(msg) {
-            errorMessage.innerText = "⚠️ " + msg;
-            errorBox.classList.remove('hidden');
+            document.getElementById('errorMessage').innerText = "⚠️ " + msg;
+            document.getElementById('errorBox').classList.remove('hidden');
         }
 
         function displayReport(data) {
             document.getElementById('scoreValue').innerText = data.risk_score !== undefined ? data.risk_score : 70;
-            
             const badge = document.getElementById('riskBadge');
             badge.innerText = data.risk_level || "Medio";
-
-            const score = data.risk_score || 70;
-            if (score >= 80) {
-                badge.className = "inline-block mt-2 px-4 py-1.5 rounded-full text-sm font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-            } else if (score >= 50) {
-                badge.className = "inline-block mt-2 px-4 py-1.5 rounded-full text-sm font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
-            } else {
-                badge.className = "inline-block mt-2 px-4 py-1.5 rounded-full text-sm font-bold bg-red-500/20 text-red-300 border border-red-500/30";
-            }
-
-            document.getElementById('summaryText').innerText = data.summary || "Analisi completata con successo.";
-            
-            const rawContent = data.markdown_report || data.message || "Nessun dettaglio generato.";
-            resultContent.innerHTML = marked.parse(rawContent);
-            resultContainer.classList.remove('hidden');
+            document.getElementById('summaryText').innerText = data.summary || "Analisi completata.";
+            document.getElementById('resultContent').innerHTML = marked.parse(data.markdown_report || "");
+            document.getElementById('resultContainer').classList.remove('hidden');
         }
 
         async function loadHistory() {
             try {
-                const res = await fetch('/history');
+                const res = await fetch('/history', {
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
                 if (!res.ok) return;
                 const list = await res.json();
                 const container = document.getElementById('historyTableContainer');
 
                 if (!Array.isArray(list) || list.length === 0) {
-                    container.innerHTML = `<p class="text-slate-400 text-sm text-center">Nessuna analisi salvata nello storico.</p>`;
+                    container.innerHTML = `<p class="text-slate-400 text-sm text-center">Nessuna analisi salvata nel tuo profilo.</p>`;
                     return;
                 }
 
@@ -296,9 +304,10 @@
 
         async function viewReport(id) {
             try {
-                const res = await fetch(`/get-report/${id}`);
+                const res = await fetch(`/get-report/${id}`, {
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
                 const data = await res.json();
-                currentReportId = data.id;
                 displayReport({
                     risk_score: data.risk_score,
                     risk_level: data.risk_level,
@@ -314,33 +323,13 @@
         function downloadPDF() {
             const element = document.getElementById('exportableArea');
             const opt = {
-                margin:       10,
-                filename:     `Audit_Report_${currentReportId || 'Compliance'}.pdf`,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2 },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                margin: 10,
+                filename: `Audit_Report_Compliance.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
             };
             html2pdf().set(opt).from(element).save();
-        }
-
-        async function buyPlan(planName) {
-            const formData = new FormData();
-            formData.append('plan', planName);
-
-            try {
-                const response = await fetch('/create-checkout-session', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-                if (data.url) {
-                    window.location.href = data.url;
-                } else {
-                    showError(data.error || 'Impossibile creare la sessione Stripe.');
-                }
-            } catch (err) {
-                showError('Errore di connessione al server.');
-            }
         }
     </script>
 </body>
