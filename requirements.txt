@@ -4,3 +4,5 @@ python-multipart
 google-genai
 pypdf
 stripe
+passlib[bcrypt]
+python-jose[cryptography]
