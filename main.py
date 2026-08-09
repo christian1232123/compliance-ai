@@ -1,6 +1,7 @@
 import os
 import json
 import sqlite3
+import time
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -64,7 +65,7 @@ async def analyze_pdf(
         if not extracted_text.strip():
             return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione o un'immagine."})
 
-        extracted_text = extracted_text[:15000]
+        extracted_text = extracted_text[:12000]
 
         if not GEMINI_API_KEY:
             return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non trovata su Render."})
@@ -93,12 +94,27 @@ async def analyze_pdf(
         {extracted_text}
         """
 
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        
-        response = model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
-        )
+        # Usiamo modelli del piano gratuito con fallback
+        models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro"]
+        response = None
+        last_error = None
+
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(
+                    prompt,
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                if response and response.text:
+                    break
+            except Exception as e:
+                last_error = e
+                time.sleep(1)
+                continue
+
+        if not response or not response.text:
+            raise last_error or Exception("Nessuna risposta generata dal modello.")
 
         result_data = json.loads(response.text)
 
