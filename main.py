@@ -3,7 +3,9 @@ import json
 import sqlite3
 import hashlib
 from io import BytesIO
-from fastapi import FastAPI, UploadFile, File, Form
+from typing import Optional
+
+from fastapi import FastAPI, UploadFile, File, Form, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from pypdf import PdfReader
 from groq import Groq
@@ -19,7 +21,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL
+            hashed_password TEXT NOT NULL,
+            is_pro INTEGER DEFAULT 0
         )
     ''')
     cursor.execute('''
@@ -41,11 +44,18 @@ def init_db():
 
 init_db()
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY") or os.environ.get("GEMINI_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_mock")
 
 def hash_pw(pw: str) -> str:
     return hashlib.sha256(pw.encode('utf-8')).hexdigest()
+
+def get_email_from_token(token: Optional[str]) -> Optional[str]:
+    if token and token.startswith("user_"):
+        return token.replace("user_", "")
+    return None
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -65,7 +75,7 @@ async def register(email: str = Form(...), password: str = Form(...)):
         conn.commit()
         conn.close()
 
-        return JSONResponse(content={"token": f"user_{email}", "email": email})
+        return JSONResponse(content={"token": f"user_{email}", "email": email, "is_pro": 0})
     except sqlite3.IntegrityError:
         return JSONResponse(status_code=400, content={"error": "E-mail già registrata."})
 
@@ -82,7 +92,35 @@ async def login(email: str = Form(...), password: str = Form(...)):
     if not user:
         return JSONResponse(status_code=400, content={"error": "Credenziali non valide."})
 
-    return JSONResponse(content={"token": f"user_{email}", "email": user["email"]})
+    return JSONResponse(content={"token": f"user_{email}", "email": user["email"], "is_pro": user["is_pro"]})
+
+@app.get("/user-status")
+async def user_status(authorization: Optional[str] = Header(None)):
+    email = get_email_from_token(authorization)
+    if not email:
+        return JSONResponse(content={"is_pro": 0})
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT is_pro FROM users WHERE email = ?', (email,))
+    user = cursor.fetchone()
+    conn.close()
+
+    is_pro = user["is_pro"] if user else 0
+    return JSONResponse(content={"is_pro": is_pro})
+
+@app.post("/confirm-payment")
+async def confirm_payment(authorization: Optional[str] = Header(None)):
+    email = get_email_from_token(authorization)
+    if email:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET is_pro = 1 WHERE email = ?', (email,))
+        conn.commit()
+        conn.close()
+        return JSONResponse(content={"status": "success", "is_pro": 1})
+    return JSONResponse(status_code=400, content={"error": "Utente non identificato"})
 
 @app.post("/analyze")
 async def analyze_pdf(
@@ -108,36 +146,44 @@ async def analyze_pdf(
         extracted_text = extracted_text[:12000]
 
         if not client:
-            return JSONResponse(status_code=500, content={"error": "Variabile GROQ_API_KEY non trovata su Render."})
+            return JSONResponse(status_code=500, content={"error": "Chiave GROQ_API_KEY non trovata su Render."})
 
-        lang_map = {"it": "Italiano", "en": "English", "es": "Español", "de": "Deutsch"}
-        target_lang = lang_map.get(language, "Italiano")
+        lang_map = {
+            "it": "Italian",
+            "en": "English",
+            "es": "Spanish",
+            "de": "German"
+        }
+        target_lang = lang_map.get(language, "Italian")
 
         std_map = {
-            "gdpr": "GDPR & Privacy",
-            "iso27001": "ISO 27001",
-            "sicurezza": "D.Lgs 81/08"
+            "gdpr": "GDPR & Privacy Policy",
+            "iso27001": "ISO 27001 Standard",
+            "sicurezza": "D.Lgs 81/08 Safety Regulation"
         }
         target_std = std_map.get(standard, "GDPR")
 
         prompt = f"""
-        Sei un Auditor di Compliance esperto. Analizza questo testo secondo lo standard: {target_std}.
-        Rispondi ESCLUSIVAMENTE in lingua: {target_lang}.
+        You are an expert Compliance Auditor. Analyze the provided document text against the following compliance standard: {target_std}.
 
-        Restituisci la risposta SOLO ed ESCLUSIVAMENTE come oggetto JSON valido con esattamente queste chiavi:
-        - "risk_score": numero intero da 0 a 100
-        - "risk_level": stringa ("Basso", "Medio", "Alto", "Critico")
-        - "summary": breve sintesi (max 2 frasi)
-        - "markdown_report": analisi dettagliata con punti di forza, criticità e raccomandazioni formattata in Markdown
+        CRITICAL INSTRUCTION: You MUST write ALL values, summaries, headers, and detailed reports ENTIRELY in {target_lang}. Do NOT use any other language.
 
-        Testo da analizzare:
+        Return ONLY a valid JSON object matching this structure:
+        {{
+            "risk_score": <integer between 0 and 100>,
+            "risk_level": "<string: Low / Medium / High / Critical, translated into {target_lang}>",
+            "summary": "<short 2-sentence summary fully written in {target_lang}>",
+            "markdown_report": "<detailed markdown analysis including strengths, critical issues, and actionable recommendations fully written in {target_lang}>"
+        }}
+
+        Document text to analyze:
         {extracted_text}
         """
 
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "Sei un assistente AI specializzato in compliance che risponde sempre in formato JSON valido."},
+                {"role": "system", "content": f"You are a professional compliance auditor. You must respond strictly in JSON format and strictly in {target_lang}."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"}
@@ -194,3 +240,27 @@ async def get_report_by_id(report_id: int):
     if not row:
         return JSONResponse(status_code=404, content={"error": "Report non trovato"})
     return JSONResponse(content=dict(row))
+
+@app.post("/create-checkout-session")
+async def create_checkout_session(plan: str = Form(...)):
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    price = 4900 if plan == "pro" else 19900
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'eur',
+                    'product_data': {'name': f'Piano ComplianceAI {plan.capitalize()}'},
+                    'unit_amount': price,
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url='https://compliance-ai-qx5a.onrender.com/?success=true',
+            cancel_url='https://compliance-ai-qx5a.onrender.com/?canceled=true',
+        )
+        return {"url": session.url}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
