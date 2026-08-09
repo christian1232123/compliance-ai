@@ -41,8 +41,7 @@ def init_db():
 
 init_db()
 
-# Recupera la chiave Groq dalle variabili d'ambiente di Render
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY") or os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 def hash_pw(pw: str) -> str:
@@ -104,12 +103,12 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione o un'immagine."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF."})
 
         extracted_text = extracted_text[:12000]
 
         if not client:
-            return JSONResponse(status_code=500, content={"error": "Chiave GROQ_API_KEY non trovata nelle variabili d'ambiente di Render."})
+            return JSONResponse(status_code=500, content={"error": "Variabile GROQ_API_KEY non trovata su Render."})
 
         lang_map = {"it": "Italiano", "en": "English", "es": "Español", "de": "Deutsch"}
         target_lang = lang_map.get(language, "Italiano")
@@ -138,7 +137,7 @@ async def analyze_pdf(
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "Sei un assistente AI specializzato in compliance che risponde sempre ed esclusivamente in formato JSON valido."},
+                {"role": "system", "content": "Sei un assistente AI specializzato in compliance che risponde sempre in formato JSON valido."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"}
