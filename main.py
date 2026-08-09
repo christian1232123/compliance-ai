@@ -2,11 +2,9 @@ import os
 import json
 import sqlite3
 from io import BytesIO
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pypdf import PdfReader
-from docx import Document
-from docx.shared import Pt, RGBColor
 from google import genai
 from google.genai import types
 
@@ -50,7 +48,7 @@ async def analyze_pdf(
     standard: str = Form("gdpr"),
     language: str = Form("it")
 ):
-    if not file.filename.endswith('.pdf'):
+    if not file.filename.lower().endswith('.pdf'):
         return JSONResponse(status_code=400, content={"error": "Il file deve essere un PDF."})
 
     try:
@@ -63,34 +61,34 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Il file potrebbe essere una scansione immagine senza testo."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione."})
 
         extracted_text = extracted_text[:15000]
 
         if not client:
-            return JSONResponse(status_code=500, content={"error": "Chiave API Gemini non configurata nelle variabili d'ambiente."})
+            return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non trovata su Render."})
 
         lang_map = {"it": "Italiano", "en": "English", "es": "Español", "de": "Deutsch"}
         target_lang = lang_map.get(language, "Italiano")
 
         std_map = {
-            "gdpr": "GDPR & Normativa Privacy europea",
-            "iso27001": "ISO/IEC 27001 (Sicurezza delle Informazioni)",
-            "sicurezza": "D.Lgs 81/08 (Sicurezza sul Lavoro)"
+            "gdpr": "GDPR & Privacy",
+            "iso27001": "ISO 27001",
+            "sicurezza": "D.Lgs 81/08"
         }
         target_std = std_map.get(standard, "GDPR")
 
         prompt = f"""
-        Sei un Auditor di Compliance esperto. Analizza il seguente testo estratto da un documento PDF ed effettua una valutazione di conformità rispetto allo standard: {target_std}.
-        Rispondi ESCLUSIVAMENTE nella lingua: {target_lang}.
+        Sei un Auditor di Compliance. Analizza questo testo secondo lo standard: {target_std}.
+        Rispondi ESCLUSIVAMENTE in lingua: {target_lang}.
 
-        Restituisci la risposta IN FORMATO JSON STRETTO con le seguenti chiavi:
-        1. "risk_score": un numero intero da 0 a 100 dove 100 indica elevata conformità / basso rischio, e 0 indica totale non conformità / alto rischio.
-        2. "risk_level": stringa tra "Basso", "Medio", "Alto", "Critico".
-        3. "summary": una breve sintesi di 2-3 frasi sull'esito globale dell'audit.
-        4. "markdown_report": la relazione completa dettagliata formattata in Markdown (Punti di Forza, Criticità, Rischi, Raccomandazioni).
+        Restituisci la risposta SOLO ed ESCLUSIVAMENTE come oggetto JSON valido con queste chiavi:
+        - "risk_score": numero intero da 0 a 100
+        - "risk_level": stringa ("Basso", "Medio", "Alto", "Critico")
+        - "summary": breve sintesi
+        - "markdown_report": analisi dettagliata formattata in Markdown
 
-        Testo del documento:
+        Testo:
         {extracted_text}
         """
 
@@ -126,17 +124,20 @@ async def analyze_pdf(
         return JSONResponse(content=result_data)
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Errore interno: {str(e)}"})
+        return JSONResponse(status_code=500, content={"error": f"Errore server: {str(e)}"})
 
 @app.get("/history")
 async def get_history():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports ORDER BY created_at DESC LIMIT 20')
-    rows = cursor.fetchall()
-    conn.close()
-    return JSONResponse(content=[dict(row) for row in rows])
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports ORDER BY created_at DESC LIMIT 20')
+        rows = cursor.fetchall()
+        conn.close()
+        return JSONResponse(content=[dict(row) for row in rows])
+    except Exception as e:
+        return JSONResponse(content=[])
 
 @app.get("/get-report/{report_id}")
 async def get_report_by_id(report_id: int):
@@ -149,46 +150,6 @@ async def get_report_by_id(report_id: int):
     if not row:
         return JSONResponse(status_code=404, content={"error": "Report non trovato"})
     return JSONResponse(content=dict(row))
-
-@app.get("/export-docx/{report_id}")
-async def export_docx(report_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM audit_reports WHERE id = ?', (report_id,))
-    row = cursor.fetchone()
-    conn.close()
-
-    if not row:
-        return JSONResponse(status_code=404, content={"error": "Report non trovato"})
-
-    doc = Document()
-    title_p = doc.add_paragraph()
-    title_run = title_p.add_run("Report di Audit & Compliance")
-    title_run.font.size = Pt(22)
-    title_run.font.bold = True
-    title_run.font.color.rgb = RGBColor(16, 185, 129)
-
-    doc.add_paragraph(f"Documento: {row['filename']}")
-    doc.add_paragraph(f"Standard: {row['standard']}")
-    doc.add_paragraph(f"Punteggio di Conformità: {row['risk_score']}/100 (Livello: {row['risk_level']})")
-    doc.add_paragraph(f"Data: {row['created_at']}")
-    doc.add_heading("Sintesi", level=2)
-    doc.add_paragraph(row['summary'])
-
-    doc.add_heading("Dettaglio Audit", level=2)
-    doc.add_paragraph(row['report_markdown'])
-
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-
-    filename_out = f"Audit_Report_{report_id}.docx"
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename={filename_out}"}
-    )
 
 @app.post("/create-checkout-session")
 async def create_checkout_session(plan: str = Form(...)):
