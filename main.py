@@ -71,7 +71,6 @@ async def analyze_compliance(file: UploadFile = File(...)):
 @app.post("/create-checkout-session")
 async def create_checkout_session(request: Request):
     try:
-        # Legge il parametro plan sia se inviato in formato Form che JSON
         form_data = await request.form()
         plan = form_data.get("plan", "pro")
 
@@ -88,7 +87,6 @@ async def create_checkout_session(request: Request):
         unit_amount = 4900 if plan == 'pro' else 19900
 
         checkout_session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
             line_items=[{
                 'price_data': {
                     'currency': 'eur',
