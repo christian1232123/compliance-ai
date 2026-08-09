@@ -1,29 +1,22 @@
 import os
 import json
 import sqlite3
+import hashlib
+import hmac
 from io import BytesIO
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status
+from fastapi import FastAPI, UploadFile, File, Form, Depends, Header
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.security import OAuth2PasswordBearer
 from pypdf import PdfReader
 from google import genai
 from google.genai import types
-from passlib.context import CryptContext
-from jose import JWTError, jwt
 
 app = FastAPI()
 
 DB_PATH = "audit_history.db"
-
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super_secret_jwt_key_compliance_ai")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super_secret_key_compliance_ai").encode('utf-8')
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -58,7 +51,6 @@ init_db()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Forziamo la versione API v1 per garantire la massima compatibilità
 client = genai.Client(
     api_key=GEMINI_API_KEY,
     http_options=types.HttpOptions(api_version="v1")
@@ -66,37 +58,31 @@ client = genai.Client(
 
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_mock")
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+# Hashing password nativo Python senza dipendenze esterne
+def hash_password(password: str) -> str:
+    return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), SECRET_KEY, 100000).hex()
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return hmac.compare_digest(hash_password(plain_password), hashed_password)
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def make_token(user_id: int, email: str) -> str:
+    data = f"{user_id}:{email}"
+    sig = hmac.new(SECRET_KEY, data.encode('utf-8'), hashlib.sha256).hex()
+    return f"{data}:{sig}"
 
-async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)):
-    if not token:
+def parse_token(authorization: Optional[str]) -> Optional[dict]:
+    if not authorization or not authorization.startswith("Bearer "):
         return None
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
-        if user_id is None:
-            return None
-    except JWTError:
+    token = authorization.split(" ")[1]
+    parts = token.split(":")
+    if len(parts) != 3:
         return None
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('SELECT id, email FROM users WHERE id = ?', (user_id,))
-    user = cursor.fetchone()
-    conn.close()
-
-    return dict(user) if user else None
+    user_id_str, email, sig = parts
+    expected_data = f"{user_id_str}:{email}"
+    expected_sig = hmac.new(SECRET_KEY, expected_data.encode('utf-8'), hashlib.sha256).hex()
+    if hmac.compare_digest(sig, expected_sig):
+        return {"id": int(user_id_str), "email": email}
+    return None
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -109,7 +95,7 @@ async def register(email: str = Form(...), password: str = Form(...)):
     if not email or not password:
         return JSONResponse(status_code=400, content={"error": "Compila tutti i campi."})
 
-    hashed_pw = get_password_hash(password)
+    hashed_pw = hash_password(password)
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -118,8 +104,8 @@ async def register(email: str = Form(...), password: str = Form(...)):
         conn.commit()
         conn.close()
 
-        access_token = create_access_token(data={"sub": user_id, "email": email})
-        return JSONResponse(content={"token": access_token, "email": email})
+        token = make_token(user_id, email)
+        return JSONResponse(content={"token": token, "email": email})
     except sqlite3.IntegrityError:
         return JSONResponse(status_code=400, content={"error": "Indirizzo e-mail già registrato."})
 
@@ -136,16 +122,18 @@ async def login(email: str = Form(...), password: str = Form(...)):
     if not user or not verify_password(password, user["hashed_password"]):
         return JSONResponse(status_code=400, content={"error": "E-mail o password non corrette."})
 
-    access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
-    return JSONResponse(content={"token": access_token, "email": user["email"]})
+    token = make_token(user["id"], user["email"])
+    return JSONResponse(content={"token": token, "email": user["email"]})
 
 @app.post("/analyze")
 async def analyze_pdf(
     file: UploadFile = File(...),
     standard: str = Form("gdpr"),
     language: str = Form("it"),
-    current_user: Optional[dict] = Depends(get_current_user)
+    authorization: Optional[str] = Header(None)
 ):
+    current_user = parse_token(authorization)
+    
     if not file.filename.lower().endswith('.pdf'):
         return JSONResponse(status_code=400, content={"error": "Il file deve essere un PDF."})
 
@@ -159,12 +147,12 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Il file potrebbe essere una scansione immagine."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione."})
 
         extracted_text = extracted_text[:12000]
 
         if not client:
-            return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non configurata nelle variabili d'ambiente di Render."})
+            return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non configurata."})
 
         lang_map = {"it": "Italiano", "en": "English", "es": "Español", "de": "Deutsch"}
         target_lang = lang_map.get(language, "Italiano")
@@ -227,7 +215,8 @@ async def analyze_pdf(
         return JSONResponse(status_code=500, content={"error": f"Errore server: {str(e)}"})
 
 @app.get("/history")
-async def get_history(current_user: Optional[dict] = Depends(get_current_user)):
+async def get_history(authorization: Optional[str] = Header(None)):
+    current_user = parse_token(authorization)
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
