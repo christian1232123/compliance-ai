@@ -1,12 +1,11 @@
 import os
 import json
 import sqlite3
-import time
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from pypdf import PdfReader
-import google.generativeai as genai
+from groq import Groq
 
 app = FastAPI()
 
@@ -33,9 +32,8 @@ def init_db():
 
 init_db()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY") or os.environ.get("GEMINI_API_KEY")
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_mock")
 
@@ -67,8 +65,8 @@ async def analyze_pdf(
 
         extracted_text = extracted_text[:12000]
 
-        if not GEMINI_API_KEY:
-            return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non trovata su Render."})
+        if not client:
+            return JSONResponse(status_code=500, content={"error": "Chiave GROQ_API_KEY non trovata su Render."})
 
         lang_map = {"it": "Italiano", "en": "English", "es": "Español", "de": "Deutsch"}
         target_lang = lang_map.get(language, "Italiano")
@@ -84,7 +82,7 @@ async def analyze_pdf(
         Sei un Auditor di Compliance esperto. Analizza questo testo secondo lo standard: {target_std}.
         Rispondi ESCLUSIVAMENTE in lingua: {target_lang}.
 
-        Restituisci la risposta SOLO ed ESCLUSIVAMENTE come oggetto JSON valido con queste chiavi:
+        Restituisci la risposta SOLO ed ESCLUSIVAMENTE come oggetto JSON valido con esattamente queste chiavi:
         - "risk_score": numero intero da 0 a 100
         - "risk_level": stringa ("Basso", "Medio", "Alto", "Critico")
         - "summary": breve sintesi (max 2 frasi)
@@ -94,29 +92,17 @@ async def analyze_pdf(
         {extracted_text}
         """
 
-        # Usiamo modelli del piano gratuito con fallback
-        models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro"]
-        response = None
-        last_error = None
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Sei un assistente AI specializzato in analisi di compliance e audit legale che risponde sempre in formato JSON valido."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
 
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    prompt,
-                    generation_config={"response_mime_type": "application/json"}
-                )
-                if response and response.text:
-                    break
-            except Exception as e:
-                last_error = e
-                time.sleep(1)
-                continue
-
-        if not response or not response.text:
-            raise last_error or Exception("Nessuna risposta generata dal modello.")
-
-        result_data = json.loads(response.text)
+        response_content = completion.choices[0].message.content
+        result_data = json.loads(response_content)
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
