@@ -1,6 +1,6 @@
 fastapi
 uvicorn
 python-multipart
-google-generativeai
+groq
 pypdf
 stripe
