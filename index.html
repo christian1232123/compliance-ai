@@ -70,6 +70,11 @@
             <p class="text-slate-400 mt-2">Analisi del documento in corso con l'IA...</p>
         </div>
 
+        <!-- Box Errore -->
+        <div id="errorBox" class="hidden mt-6 p-4 bg-red-900/50 border border-red-500 text-red-200 rounded-xl text-center">
+            <p id="errorMessage">Si è verificato un errore.</p>
+        </div>
+
         <!-- Risultato Audit & Risk Score -->
         <div id="resultContainer" class="hidden mt-8 p-6 bg-slate-900/80 border border-slate-700 rounded-xl">
             
@@ -89,7 +94,7 @@
                         </span>
                     </div>
                     <div class="max-w-xs text-sm text-slate-300 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
-                        <p id="summaryText" class="italic">Sintesi in generazione...</p>
+                        <p id="summaryText" class="italic">Sintesi...</p>
                     </div>
                 </div>
 
@@ -99,13 +104,10 @@
                 </div>
             </div>
 
-            <!-- Pulsanti Download -->
-            <div class="mt-6 flex flex-wrap gap-4 justify-end">
+            <!-- Pulsante Download PDF -->
+            <div class="mt-6 flex justify-end">
                 <button onclick="downloadPDF()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-5 rounded-lg flex items-center space-x-2 transition shadow">
                     <span>📄 Scarica Report PDF</span>
-                </button>
-                <button onclick="downloadWord()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 px-5 rounded-lg flex items-center space-x-2 transition shadow">
-                    <span>📝 Scarica Report Word (.docx)</span>
                 </button>
             </div>
         </div>
@@ -114,14 +116,14 @@
         <div class="mt-12 border-t border-slate-700 pt-8">
             <h2 class="text-2xl font-bold text-white mb-4">📜 Storico delle Analisi</h2>
             <div id="historyTableContainer" class="overflow-x-auto bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-                <p class="text-slate-400 text-sm text-center">Nessuna analisi salvata nello storico.</p>
+                <p class="text-slate-400 text-sm text-center">Caricamento storico...</p>
             </div>
         </div>
 
         <!-- Sezione Pricing -->
         <div id="pricingSection" class="mt-16 border-t border-slate-700 pt-10">
             <h2 class="text-2xl font-bold text-center text-white mb-2">Scegli il tuo Piano</h2>
-            <p class="text-slate-400 text-center mb-8">Sblocca analisi illimitate e report dettagliati in PDF per la tua azienda.</p>
+            <p class="text-slate-400 text-center mb-8">Sblocca analisi illimitate e report dettagliati per la tua azienda.</p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <!-- Piano Pro -->
@@ -177,6 +179,8 @@
         const resultContainer = document.getElementById('resultContainer');
         const resultContent = document.getElementById('resultContent');
         const submitBtn = document.getElementById('submitBtn');
+        const errorBox = document.getElementById('errorBox');
+        const errorMessage = document.getElementById('errorMessage');
 
         loadHistory();
 
@@ -192,6 +196,7 @@
 
             loading.classList.remove('hidden');
             resultContainer.classList.add('hidden');
+            errorBox.classList.add('hidden');
             submitBtn.disabled = true;
             submitBtn.classList.add('opacity-50');
 
@@ -208,19 +213,21 @@
                     displayReport(data);
                     loadHistory();
                 } else {
-                    const errMessage = data.error || data.detail || "Errore sconosciuto durante l'analisi.";
-                    resultContent.innerHTML = `<p class="text-red-400 font-bold">⚠️ ${errMessage}</p>`;
-                    resultContainer.classList.remove('hidden');
+                    showError(data.error || "Errore sconosciuto durante l'analisi.");
                 }
             } catch (err) {
-                resultContent.innerHTML = `<p class="text-red-400 font-bold">⚠️ Errore di connessione al server.</p>`;
-                resultContainer.classList.remove('hidden');
+                showError("Errore di connessione al server.");
             } finally {
                 loading.classList.add('hidden');
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('opacity-50');
             }
         });
+
+        function showError(msg) {
+            errorMessage.innerText = "⚠️ " + msg;
+            errorBox.classList.remove('hidden');
+        }
 
         function displayReport(data) {
             document.getElementById('scoreValue').innerText = data.risk_score !== undefined ? data.risk_score : 70;
@@ -300,7 +307,7 @@
                 });
                 window.scrollTo({ top: document.getElementById('resultContainer').offsetTop - 20, behavior: 'smooth' });
             } catch (err) {
-                alert("Errore nel recupero del report.");
+                showError("Errore nel recupero del report.");
             }
         }
 
@@ -316,14 +323,6 @@
             html2pdf().set(opt).from(element).save();
         }
 
-        function downloadWord() {
-            if (!currentReportId) {
-                alert("Seleziona o genera prima un report.");
-                return;
-            }
-            window.location.href = `/export-docx/${currentReportId}`;
-        }
-
         async function buyPlan(planName) {
             const formData = new FormData();
             formData.append('plan', planName);
@@ -337,10 +336,10 @@
                 if (data.url) {
                     window.location.href = data.url;
                 } else {
-                    alert('Errore: ' + (data.error || 'Impossibile creare la sessione Stripe.'));
+                    showError(data.error || 'Impossibile creare la sessione Stripe.');
                 }
             } catch (err) {
-                alert('Errore di connessione al server.');
+                showError('Errore di connessione al server.');
             }
         }
     </script>
