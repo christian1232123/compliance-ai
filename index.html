@@ -65,7 +65,7 @@
         </div>
 
         <!-- Sezione Piani e Pricing -->
-        <div class="mt-16 border-t border-slate-700 pt-10">
+        <div id="pricingSection" class="mt-16 border-t border-slate-700 pt-10">
             <h2 class="text-2xl font-bold text-center text-white mb-2">Scegli il tuo Piano</h2>
             <p class="text-slate-400 text-center mb-8">Sblocca analisi illimitate e report dettagliati in PDF per la tua azienda.</p>
 
@@ -111,6 +111,8 @@
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('success') === 'true') {
             document.getElementById('successBanner').classList.remove('hidden');
+            // Nasconde la sezione dei prezzi dopo l'acquisto
+            document.getElementById('pricingSection').classList.add('hidden');
         } else if (urlParams.get('canceled') === 'true') {
             document.getElementById('cancelBanner').classList.remove('hidden');
         }
@@ -182,3 +184,4 @@
     </script>
 </body>
 </html>
+        }
