@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 import os
 import io
@@ -28,7 +28,6 @@ async def analyze_compliance(file: UploadFile = File(...)):
         )
 
     try:
-        # 1. Estrazione del testo dal file PDF
         pdf_bytes = await file.read()
         pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
         extracted_text = ""
@@ -40,31 +39,28 @@ async def analyze_compliance(file: UploadFile = File(...)):
         if not extracted_text.strip():
             return JSONResponse(
                 status_code=400,
-                content={"error": "Impossibile estrarre testo dal PDF. Assicurati che non sia una scansione di sole immagini."}
+                content={"error": "Impossibile estrarre testo dal PDF."}
             )
 
-        # Limite testo a 12.000 caratteri
         short_text = extracted_text[:12000]
 
-        # 2. Chiamata all'IA tramite Groq (Llama 3.3)
         client = Groq(api_key=api_key)
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {
                     "role": "system",
-                    "content": "Sei un auditor esperto di Compliance aziendale e GDPR. Analizza il documento fornito ed evidenzia in modo sintetico: 1) Punti critici o non conformità, 2) Rischi legali/privacy, 3) Raccomandazioni operative."
+                    "content": "Sei un auditor esperto di Compliance aziendale e GDPR. Analizza il documento ed evidenzia: 1) Punti critici o non conformità, 2) Rischi legali/privacy, 3) Raccomandazioni operative."
                 },
                 {
                     "role": "user",
-                    "content": f"Ecco il testo del documento da analizzare:\n\n{short_text}"
+                    "content": f"Ecco il testo:\n\n{short_text}"
                 }
             ],
             temperature=0.3
         )
 
-        analysis_result = response.choices[0].message.content
-        return {"status": "success", "message": analysis_result}
+        return {"status": "success", "message": response.choices[0].message.content}
 
     except Exception as e:
         return JSONResponse(
@@ -73,11 +69,22 @@ async def analyze_compliance(file: UploadFile = File(...)):
         )
 
 @app.post("/create-checkout-session")
-async def create_checkout_session(plan: str = Form(...)):
+async def create_checkout_session(request: Request):
     try:
-        domain_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8000")
-        
-        # Prezzo in centesimi: 49€ per Pro, 199€ per Enterprise
+        # Legge il parametro plan sia se inviato in formato Form che JSON
+        form_data = await request.form()
+        plan = form_data.get("plan", "pro")
+
+        secret_key = os.getenv("STRIPE_SECRET_KEY", "").strip()
+        if not secret_key:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "STRIPE_SECRET_KEY non configurata."}
+            )
+
+        stripe.api_key = secret_key
+        domain_url = os.getenv("RENDER_EXTERNAL_URL", "https://compliance-ai-qx5a.onrender.com")
+
         unit_amount = 4900 if plan == 'pro' else 19900
 
         checkout_session = stripe.checkout.Session.create(
@@ -91,9 +98,12 @@ async def create_checkout_session(plan: str = Form(...)):
                 'quantity': 1,
             }],
             mode='payment',
-            success_url=domain_url + '/?success=true',
-            cancel_url=domain_url + '/?canceled=true',
+            success_url=f"{domain_url}/?success=true",
+            cancel_url=f"{domain_url}/?canceled=true",
         )
         return {"url": checkout_session.url}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Errore Stripe: {str(e)}"}
+        )
