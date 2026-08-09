@@ -153,10 +153,10 @@
                 if (data.url) {
                     window.location.href = data.url;
                 } else {
-                    alert('Errore nella creazione della sessione di pagamento.');
+                    alert('Errore: ' + (data.error || 'Impossibile creare la sessione Stripe.'));
                 }
             } catch (err) {
-                alert('Errore di connessione a Stripe.');
+                alert('Errore di connessione al server.');
             }
         }
     </script>
