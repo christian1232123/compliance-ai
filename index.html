@@ -15,6 +15,18 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-start p-4 py-12">
 
+    <!-- Banner Successo Pagamento -->
+    <div id="successBanner" class="hidden max-w-4xl w-full bg-emerald-900/60 border border-emerald-500 text-emerald-200 p-6 rounded-2xl mb-8 shadow-xl text-center">
+        <h2 class="text-2xl font-bold mb-2">🎉 Pagamento completato con successo!</h2>
+        <p class="text-emerald-300">Grazie per aver scelto ComplianceAI. Il tuo account è ora attivo e puoi procedere con le tue analisi PDF senza limiti.</p>
+    </div>
+
+    <!-- Banner Annullamento Pagamento -->
+    <div id="cancelBanner" class="hidden max-w-4xl w-full bg-amber-900/60 border border-amber-500 text-amber-200 p-6 rounded-2xl mb-8 shadow-xl text-center">
+        <h2 class="text-xl font-bold mb-1">Pagamento annullato</h2>
+        <p class="text-amber-300">La transazione non è stata completata. Puoi riprovare in qualsiasi momento selezionando uno dei piani sottostanti.</p>
+    </div>
+
     <div class="max-w-4xl w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
         <h1 class="text-3xl font-bold text-center text-emerald-400 mb-2">Audit Compliance AI</h1>
         <p class="text-slate-400 text-center mb-8">Carica un documento PDF per generare un report automatico sulle criticità normative.</p>
@@ -95,6 +107,14 @@
     </div>
 
     <script>
+        // Gestione parametri URL (Success / Cancel)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('success') === 'true') {
+            document.getElementById('successBanner').classList.remove('hidden');
+        } else if (urlParams.get('canceled') === 'true') {
+            document.getElementById('cancelBanner').classList.remove('hidden');
+        }
+
         const form = document.getElementById('auditForm');
         const fileInput = document.getElementById('pdfFile');
         const loading = document.getElementById('loading');
