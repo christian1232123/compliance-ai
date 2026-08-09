@@ -3,13 +3,10 @@ import json
 import sqlite3
 import hashlib
 from io import BytesIO
-from typing import Optional
-
-from fastapi import FastAPI, UploadFile, File, Form, Header
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from pypdf import PdfReader
-from google import genai
-from google.genai import types
+from groq import Groq
 
 app = FastAPI()
 
@@ -44,12 +41,9 @@ def init_db():
 
 init_db()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-client = genai.Client(
-    api_key=GEMINI_API_KEY,
-    http_options=types.HttpOptions(api_version="v1")
-) if GEMINI_API_KEY else None
+# Recupera la chiave Groq dalle variabili d'ambiente di Render
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY") or os.environ.get("GEMINI_API_KEY")
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 def hash_pw(pw: str) -> str:
     return hashlib.sha256(pw.encode('utf-8')).hexdigest()
@@ -110,12 +104,12 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione o un'immagine."})
 
         extracted_text = extracted_text[:12000]
 
         if not client:
-            return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non configurata."})
+            return JSONResponse(status_code=500, content={"error": "Chiave GROQ_API_KEY non trovata nelle variabili d'ambiente di Render."})
 
         lang_map = {"it": "Italiano", "en": "English", "es": "Español", "de": "Deutsch"}
         target_lang = lang_map.get(language, "Italiano")
@@ -131,25 +125,27 @@ async def analyze_pdf(
         Sei un Auditor di Compliance esperto. Analizza questo testo secondo lo standard: {target_std}.
         Rispondi ESCLUSIVAMENTE in lingua: {target_lang}.
 
-        Restituisci la risposta SOLO ed ESCLUSIVAMENTE come oggetto JSON valido con queste chiavi:
+        Restituisci la risposta SOLO ed ESCLUSIVAMENTE come oggetto JSON valido con esattamente queste chiavi:
         - "risk_score": numero intero da 0 a 100
         - "risk_level": stringa ("Basso", "Medio", "Alto", "Critico")
         - "summary": breve sintesi (max 2 frasi)
-        - "markdown_report": analisi dettagliata formattata in Markdown
+        - "markdown_report": analisi dettagliata con punti di forza, criticità e raccomandazioni formattata in Markdown
 
-        Testo:
+        Testo da analizzare:
         {extracted_text}
         """
 
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Sei un assistente AI specializzato in compliance che risponde sempre ed esclusivamente in formato JSON valido."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
         )
 
-        result_data = json.loads(response.text)
+        response_content = completion.choices[0].message.content
+        result_data = json.loads(response_content)
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
