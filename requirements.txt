@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 python-multipart
-groq
+google-genai
 pypdf
-stripe
+python-docx
+jinja2
