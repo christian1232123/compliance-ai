@@ -21,31 +21,27 @@
         <div id="userHeader" class="text-sm"></div>
     </div>
 
-    <!-- Modale Auth (Login/Registrazione) -->
-    <div id="authBox" class="max-w-md w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700 mb-8">
-        <div class="flex justify-center border-b border-slate-700 pb-4 mb-6 gap-6">
-            <button id="tabLogin" onclick="switchAuthTab('login')" class="text-lg font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1">Accedi</button>
-            <button id="tabRegister" onclick="switchAuthTab('register')" class="text-lg font-bold text-slate-400 hover:text-white pb-1">Registrati</button>
+    <div id="authBox" class="max-w-md w-full bg-slate-800 rounded-2xl shadow-2xl p-6 border border-slate-700 mb-6">
+        <div class="flex justify-center border-b border-slate-700 pb-3 mb-4 gap-6">
+            <button id="tabLogin" onclick="switchAuthTab('login')" class="text-base font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1">Accedi</button>
+            <button id="tabRegister" onclick="switchAuthTab('register')" class="text-base font-bold text-slate-400 hover:text-white pb-1">Registrati</button>
         </div>
 
-        <form id="authForm" class="space-y-4">
+        <form id="authForm" class="space-y-3">
             <div>
-                <label class="block text-sm font-medium mb-1 text-slate-300">E-mail</label>
-                <input type="email" id="authEmail" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500">
+                <input type="email" id="authEmail" placeholder="E-mail" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-emerald-500">
             </div>
             <div>
-                <label class="block text-sm font-medium mb-1 text-slate-300">Password</label>
-                <input type="password" id="authPassword" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500">
+                <input type="password" id="authPassword" placeholder="Password" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-emerald-500">
             </div>
-            <button type="submit" id="authSubmitBtn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 px-6 rounded-lg transition duration-200">
+            <button type="submit" id="authSubmitBtn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-2.5 rounded-lg text-sm transition">
                 Accedi
             </button>
         </form>
-        <p id="authError" class="text-red-400 text-sm mt-4 text-center hidden"></p>
+        <p id="authError" class="text-red-400 text-xs mt-3 text-center hidden"></p>
     </div>
 
-    <!-- App Principale (Nascosta prima del login) -->
-    <div id="appBox" class="hidden max-w-4xl w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
+    <div class="max-w-4xl w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
         <p class="text-slate-400 text-center mb-8">Carica un documento PDF per generare un report automatico sulle criticità normative.</p>
 
         <form id="auditForm" class="space-y-6">
@@ -122,11 +118,10 @@
             </div>
         </div>
 
-        <!-- Storico personale -->
         <div class="mt-12 border-t border-slate-700 pt-8">
-            <h2 class="text-2xl font-bold text-white mb-4">📜 Il Tuo Storico Riservato</h2>
+            <h2 class="text-2xl font-bold text-white mb-4">📜 Storico delle Analisi</h2>
             <div id="historyTableContainer" class="overflow-x-auto bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-                <p class="text-slate-400 text-sm text-center">Nessuna analisi salvata nel tuo profilo.</p>
+                <p class="text-slate-400 text-sm text-center">Nessuna analisi salvata.</p>
             </div>
         </div>
     </div>
@@ -142,12 +137,12 @@
             currentAuthMode = mode;
             document.getElementById('authError').classList.add('hidden');
             if (mode === 'login') {
-                document.getElementById('tabLogin').className = "text-lg font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1";
-                document.getElementById('tabRegister').className = "text-lg font-bold text-slate-400 hover:text-white pb-1";
+                document.getElementById('tabLogin').className = "text-base font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1";
+                document.getElementById('tabRegister').className = "text-base font-bold text-slate-400 hover:text-white pb-1";
                 document.getElementById('authSubmitBtn').innerText = "Accedi";
             } else {
-                document.getElementById('tabRegister').className = "text-lg font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1";
-                document.getElementById('tabLogin').className = "text-lg font-bold text-slate-400 hover:text-white pb-1";
+                document.getElementById('tabRegister').className = "text-base font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1";
+                document.getElementById('tabLogin').className = "text-base font-bold text-slate-400 hover:text-white pb-1";
                 document.getElementById('authSubmitBtn').innerText = "Registrati";
             }
         }
@@ -192,19 +187,16 @@
 
         function checkAuthState() {
             const authBox = document.getElementById('authBox');
-            const appBox = document.getElementById('appBox');
             const userHeader = document.getElementById('userHeader');
 
             if (authToken && userEmail) {
                 authBox.classList.add('hidden');
-                appBox.classList.remove('hidden');
                 userHeader.innerHTML = `<span class="text-slate-300 mr-3">👤 ${userEmail}</span> <button onclick="logout()" class="bg-red-500/20 hover:bg-red-500/40 text-red-300 px-3 py-1 rounded transition text-xs font-semibold">Esci</button>`;
-                loadHistory();
             } else {
                 authBox.classList.remove('hidden');
-                appBox.classList.add('hidden');
-                userHeader.innerHTML = '';
+                userHeader.innerHTML = '<span class="text-slate-400 text-xs">(Ospite)</span>';
             }
+            loadHistory();
         }
 
         document.getElementById('auditForm').addEventListener('submit', async (e) => {
@@ -221,10 +213,15 @@
             document.getElementById('resultContainer').classList.add('hidden');
             document.getElementById('errorBox').classList.add('hidden');
 
+            const headers = {};
+            if (authToken) {
+                headers['Authorization'] = 'Bearer ' + authToken;
+            }
+
             try {
                 const response = await fetch('/analyze', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + authToken },
+                    headers: headers,
                     body: formData
                 });
 
@@ -234,10 +231,10 @@
                     displayReport(data);
                     loadHistory();
                 } else {
-                    showError(data.error || data.detail || "Errore durante l'analisi.");
+                    showError(data.error || "Errore durante l'analisi.");
                 }
             } catch (err) {
-                showError("Errore di connessione.");
+                showError("Errore di connessione al server.");
             } finally {
                 document.getElementById('loading').classList.add('hidden');
             }
@@ -258,16 +255,18 @@
         }
 
         async function loadHistory() {
+            const headers = {};
+            if (authToken) {
+                headers['Authorization'] = 'Bearer ' + authToken;
+            }
             try {
-                const res = await fetch('/history', {
-                    headers: { 'Authorization': 'Bearer ' + authToken }
-                });
+                const res = await fetch('/history', { headers: headers });
                 if (!res.ok) return;
                 const list = await res.json();
                 const container = document.getElementById('historyTableContainer');
 
                 if (!Array.isArray(list) || list.length === 0) {
-                    container.innerHTML = `<p class="text-slate-400 text-sm text-center">Nessuna analisi salvata nel tuo profilo.</p>`;
+                    container.innerHTML = `<p class="text-slate-400 text-sm text-center">Nessuna analisi salvata.</p>`;
                     return;
                 }
 
@@ -304,9 +303,7 @@
 
         async function viewReport(id) {
             try {
-                const res = await fetch(`/get-report/${id}`, {
-                    headers: { 'Authorization': 'Bearer ' + authToken }
-                });
+                const res = await fetch(`/get-report/${id}`);
                 const data = await res.json();
                 displayReport({
                     risk_score: data.risk_score,
