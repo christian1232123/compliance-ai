@@ -92,8 +92,9 @@ async def analyze_pdf(
         {extracted_text}
         """
 
+        # Modello standard supportato: gemini-2.0-flash
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"
