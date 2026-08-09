@@ -2,12 +2,10 @@ import os
 import json
 import sqlite3
 import hashlib
-import hmac
 from io import BytesIO
-from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, Header
+from fastapi import FastAPI, UploadFile, File, Form, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from pypdf import PdfReader
 from google import genai
@@ -16,7 +14,6 @@ from google.genai import types
 app = FastAPI()
 
 DB_PATH = "audit_history.db"
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super_secret_key_compliance_ai").encode('utf-8')
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -25,8 +22,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            hashed_password TEXT NOT NULL
         )
     ''')
     cursor.execute('''
@@ -40,8 +36,7 @@ def init_db():
             risk_level TEXT,
             summary TEXT,
             report_markdown TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
@@ -56,33 +51,8 @@ client = genai.Client(
     http_options=types.HttpOptions(api_version="v1")
 ) if GEMINI_API_KEY else None
 
-STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_mock")
-
-# Hashing password nativo Python senza dipendenze esterne
-def hash_password(password: str) -> str:
-    return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), SECRET_KEY, 100000).hex()
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return hmac.compare_digest(hash_password(plain_password), hashed_password)
-
-def make_token(user_id: int, email: str) -> str:
-    data = f"{user_id}:{email}"
-    sig = hmac.new(SECRET_KEY, data.encode('utf-8'), hashlib.sha256).hex()
-    return f"{data}:{sig}"
-
-def parse_token(authorization: Optional[str]) -> Optional[dict]:
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-    token = authorization.split(" ")[1]
-    parts = token.split(":")
-    if len(parts) != 3:
-        return None
-    user_id_str, email, sig = parts
-    expected_data = f"{user_id_str}:{email}"
-    expected_sig = hmac.new(SECRET_KEY, expected_data.encode('utf-8'), hashlib.sha256).hex()
-    if hmac.compare_digest(sig, expected_sig):
-        return {"id": int(user_id_str), "email": email}
-    return None
+def hash_pw(pw: str) -> str:
+    return hashlib.sha256(pw.encode('utf-8')).hexdigest()
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -95,19 +65,16 @@ async def register(email: str = Form(...), password: str = Form(...)):
     if not email or not password:
         return JSONResponse(status_code=400, content={"error": "Compila tutti i campi."})
 
-    hashed_pw = hash_password(password)
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO users (email, hashed_password) VALUES (?, ?)', (email, hashed_pw))
-        user_id = cursor.lastrowid
+        cursor.execute('INSERT INTO users (email, hashed_password) VALUES (?, ?)', (email, hash_pw(password)))
         conn.commit()
         conn.close()
 
-        token = make_token(user_id, email)
-        return JSONResponse(content={"token": token, "email": email})
+        return JSONResponse(content={"token": f"user_{email}", "email": email})
     except sqlite3.IntegrityError:
-        return JSONResponse(status_code=400, content={"error": "Indirizzo e-mail già registrato."})
+        return JSONResponse(status_code=400, content={"error": "E-mail già registrata."})
 
 @app.post("/login")
 async def login(email: str = Form(...), password: str = Form(...)):
@@ -115,25 +82,21 @@ async def login(email: str = Form(...), password: str = Form(...)):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+    cursor.execute('SELECT * FROM users WHERE email = ? AND hashed_password = ?', (email, hash_pw(password)))
     user = cursor.fetchone()
     conn.close()
 
-    if not user or not verify_password(password, user["hashed_password"]):
-        return JSONResponse(status_code=400, content={"error": "E-mail o password non corrette."})
+    if not user:
+        return JSONResponse(status_code=400, content={"error": "Credenziali non valide."})
 
-    token = make_token(user["id"], user["email"])
-    return JSONResponse(content={"token": token, "email": user["email"]})
+    return JSONResponse(content={"token": f"user_{email}", "email": user["email"]})
 
 @app.post("/analyze")
 async def analyze_pdf(
     file: UploadFile = File(...),
     standard: str = Form("gdpr"),
-    language: str = Form("it"),
-    authorization: Optional[str] = Header(None)
+    language: str = Form("it")
 ):
-    current_user = parse_token(authorization)
-    
     if not file.filename.lower().endswith('.pdf'):
         return JSONResponse(status_code=400, content={"error": "Il file deve essere un PDF."})
 
@@ -147,7 +110,7 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF."})
 
         extracted_text = extracted_text[:12000]
 
@@ -187,15 +150,13 @@ async def analyze_pdf(
         )
 
         result_data = json.loads(response.text)
-        user_id = current_user["id"] if current_user else None
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO audit_reports (user_id, filename, standard, language, risk_score, risk_level, summary, report_markdown)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO audit_reports (filename, standard, language, risk_score, risk_level, summary, report_markdown)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
-            user_id,
             file.filename,
             target_std,
             target_lang,
@@ -215,16 +176,12 @@ async def analyze_pdf(
         return JSONResponse(status_code=500, content={"error": f"Errore server: {str(e)}"})
 
 @app.get("/history")
-async def get_history(authorization: Optional[str] = Header(None)):
-    current_user = parse_token(authorization)
+async def get_history():
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        if current_user:
-            cursor.execute('SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports WHERE user_id = ? ORDER BY created_at DESC LIMIT 20', (current_user["id"],))
-        else:
-            cursor.execute('SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports WHERE user_id IS NULL ORDER BY created_at DESC LIMIT 20')
+        cursor.execute('SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports ORDER BY created_at DESC LIMIT 20')
         rows = cursor.fetchall()
         conn.close()
         return JSONResponse(content=[dict(row) for row in rows])
