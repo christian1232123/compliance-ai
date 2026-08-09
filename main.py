@@ -2,22 +2,47 @@ import os
 import json
 import sqlite3
 from io import BytesIO
-from fastapi import FastAPI, UploadFile, File, Form
+from datetime import datetime, timedelta
+from typing import Optional
+
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import OAuth2PasswordBearer
 from pypdf import PdfReader
 from google import genai
 from google.genai import types
+from passlib.context import CryptContext
+from jose import JWTError, jwt
 
 app = FastAPI()
 
 DB_PATH = "audit_history.db"
 
+# Sicurezza & JWT Config
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super_secret_jwt_key_compliance_ai")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 giorni
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    # Tabella Utenti
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            hashed_password TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Tabella Report con associazione user_id
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS audit_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             filename TEXT,
             standard TEXT,
             language TEXT,
@@ -25,7 +50,8 @@ def init_db():
             risk_level TEXT,
             summary TEXT,
             report_markdown TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
     conn.commit()
@@ -37,16 +63,91 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_mock")
 
+# Helper Auth
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)):
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Autenticazione richiesta. Effettua il login."
+        )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Token non valido.")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token non valido o scaduto.")
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, email FROM users WHERE id = ?', (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user is None:
+        raise HTTPException(status_code=401, detail="Utente non trovato.")
+    return dict(user)
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open("index.html", "r", encoding="utf-8") as f:
         return f.read()
 
+@app.post("/register")
+async def register(email: str = Form(...), password: str = Form(...)):
+    email = email.strip().lower()
+    if not email or not password:
+        return JSONResponse(status_code=400, content={"error": "Compila tutti i campi."})
+
+    hashed_pw = get_password_hash(password)
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO users (email, hashed_password) VALUES (?, ?)', (email, hashed_pw))
+        user_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        access_token = create_access_token(data={"sub": user_id, "email": email})
+        return JSONResponse(content={"token": access_token, "email": email})
+    except sqlite3.IntegrityError:
+        return JSONResponse(status_code=400, content={"error": "Indirizzo e-mail già registrato."})
+
+@app.post("/login")
+async def login(email: str = Form(...), password: str = Form(...)):
+    email = email.strip().lower()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user or not verify_password(password, user["hashed_password"]):
+        return JSONResponse(status_code=400, content={"error": "E-mail o password non corrette."})
+
+    access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
+    return JSONResponse(content={"token": access_token, "email": user["email"]})
+
 @app.post("/analyze")
 async def analyze_pdf(
     file: UploadFile = File(...),
     standard: str = Form("gdpr"),
-    language: str = Form("it")
+    language: str = Form("it"),
+    current_user: dict = Depends(get_current_user)
 ):
     if not file.filename.lower().endswith('.pdf'):
         return JSONResponse(status_code=400, content={"error": "Il file deve essere un PDF."})
@@ -61,7 +162,7 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione immagine."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF."})
 
         extracted_text = extracted_text[:12000]
 
@@ -102,12 +203,14 @@ async def analyze_pdf(
 
         result_data = json.loads(response.text)
 
+        # Salvataggio nel DB associato all'UTENTE LOGGATO
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO audit_reports (filename, standard, language, risk_score, risk_level, summary, report_markdown)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO audit_reports (user_id, filename, standard, language, risk_score, risk_level, summary, report_markdown)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
+            current_user["id"],
             file.filename,
             target_std,
             target_lang,
@@ -127,12 +230,15 @@ async def analyze_pdf(
         return JSONResponse(status_code=500, content={"error": f"Errore server: {str(e)}"})
 
 @app.get("/history")
-async def get_history():
+async def get_history(current_user: dict = Depends(get_current_user)):
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute('SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports ORDER BY created_at DESC LIMIT 20')
+        cursor.execute(
+            'SELECT id, filename, standard, language, risk_score, risk_level, summary, created_at FROM audit_reports WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
+            (current_user["id"],)
+        )
         rows = cursor.fetchall()
         conn.close()
         return JSONResponse(content=[dict(row) for row in rows])
@@ -140,15 +246,15 @@ async def get_history():
         return JSONResponse(content=[])
 
 @app.get("/get-report/{report_id}")
-async def get_report_by_id(report_id: int):
+async def get_report_by_id(report_id: int, current_user: dict = Depends(get_current_user)):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM audit_reports WHERE id = ?', (report_id,))
+    cursor.execute('SELECT * FROM audit_reports WHERE id = ? AND user_id = ?', (report_id, current_user["id"]))
     row = cursor.fetchone()
     conn.close()
     if not row:
-        return JSONResponse(status_code=404, content={"error": "Report non trovato"})
+        return JSONResponse(status_code=404, content={"error": "Report non trovato o non autorizzato"})
     return JSONResponse(content=dict(row))
 
 @app.post("/create-checkout-session")
