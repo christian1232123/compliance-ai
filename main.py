@@ -90,7 +90,10 @@ async def create_checkout_session(request: Request):
             line_items=[{
                 'price_data': {
                     'currency': 'eur',
-                    'product_data': {'name': f'Piano ComplianceAI: {plan.capitalize()}'},
+                    'product_data': {
+                        'name': f'Piano ComplianceAI: {plan.capitalize()}',
+                        'tax_code': 'txcd_10000000',  # Servizi Software/SaaS erogati elettronicamente
+                    },
                     'unit_amount': unit_amount,
                 },
                 'quantity': 1,
