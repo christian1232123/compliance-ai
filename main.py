@@ -5,8 +5,7 @@ from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from pypdf import PdfReader
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 
 app = FastAPI()
 
@@ -34,7 +33,9 @@ def init_db():
 init_db()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_mock")
 
 @app.get("/", response_class=HTMLResponse)
@@ -61,11 +62,11 @@ async def analyze_pdf(
                 extracted_text += text + "\n"
 
         if not extracted_text.strip():
-            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione immagine."})
+            return JSONResponse(status_code=400, content={"error": "Impossibile estrarre testo dal PDF. Potrebbe essere una scansione o un'immagine."})
 
         extracted_text = extracted_text[:15000]
 
-        if not client:
+        if not GEMINI_API_KEY:
             return JSONResponse(status_code=500, content={"error": "Chiave GEMINI_API_KEY non trovata su Render."})
 
         lang_map = {"it": "Italiano", "en": "English", "es": "Español", "de": "Deutsch"}
@@ -79,26 +80,24 @@ async def analyze_pdf(
         target_std = std_map.get(standard, "GDPR")
 
         prompt = f"""
-        Sei un Auditor di Compliance. Analizza questo testo secondo lo standard: {target_std}.
+        Sei un Auditor di Compliance esperto. Analizza questo testo secondo lo standard: {target_std}.
         Rispondi ESCLUSIVAMENTE in lingua: {target_lang}.
 
         Restituisci la risposta SOLO ed ESCLUSIVAMENTE come oggetto JSON valido con queste chiavi:
         - "risk_score": numero intero da 0 a 100
         - "risk_level": stringa ("Basso", "Medio", "Alto", "Critico")
-        - "summary": breve sintesi
-        - "markdown_report": analisi dettagliata formattata in Markdown
+        - "summary": breve sintesi (max 2 frasi)
+        - "markdown_report": analisi dettagliata con punti di forza, criticità e raccomandazioni formattata in Markdown
 
-        Testo:
+        Testo da analizzare:
         {extracted_text}
         """
 
-        # Modello standard supportato: gemini-2.0-flash
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"}
         )
 
         result_data = json.loads(response.text)
