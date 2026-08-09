@@ -18,27 +18,11 @@
 
     <div class="max-w-4xl w-full flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-emerald-400">ComplianceAI</h1>
-        <div id="userHeader" class="text-sm"></div>
+        <div id="userHeader" class="text-sm flex items-center space-x-2"></div>
     </div>
 
-    <div id="authBox" class="max-w-md w-full bg-slate-800 rounded-2xl shadow-2xl p-6 border border-slate-700 mb-6">
-        <div class="flex justify-center border-b border-slate-700 pb-3 mb-4 gap-6">
-            <button id="tabLogin" onclick="switchAuthTab('login')" class="text-base font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1">Accedi</button>
-            <button id="tabRegister" onclick="switchAuthTab('register')" class="text-base font-bold text-slate-400 hover:text-white pb-1">Registrati</button>
-        </div>
-
-        <form id="authForm" class="space-y-3">
-            <div>
-                <input type="email" id="authEmail" placeholder="E-mail" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-emerald-500">
-            </div>
-            <div>
-                <input type="password" id="authPassword" placeholder="Password" required class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-emerald-500">
-            </div>
-            <button type="submit" id="authSubmitBtn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-2.5 rounded-lg text-sm transition">
-                Accedi
-            </button>
-        </form>
-        <p id="authError" class="text-red-400 text-xs mt-3 text-center hidden"></p>
+    <div id="paymentSuccessNotice" class="hidden max-w-4xl w-full bg-emerald-900/50 border border-emerald-500 text-emerald-200 p-4 rounded-xl text-center mb-6 font-semibold">
+        🎉 Pagamento completato con successo! Il tuo account ora è PRO.
     </div>
 
     <div class="max-w-4xl w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
@@ -118,85 +102,91 @@
             </div>
         </div>
 
+        <!-- Storico Analisi -->
         <div class="mt-12 border-t border-slate-700 pt-8">
             <h2 class="text-2xl font-bold text-white mb-4">📜 Storico delle Analisi</h2>
             <div id="historyTableContainer" class="overflow-x-auto bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-                <p class="text-slate-400 text-sm text-center">Nessuna analisi salvata.</p>
+                <p class="text-slate-400 text-sm text-center">Nessuna analisi salvata nello storico.</p>
             </div>
         </div>
+
+        <!-- Sezione Piani e Pricing (Nascosta se PRO) -->
+        <div id="pricingSection" class="mt-16 border-t border-slate-700 pt-10">
+            <h2 class="text-2xl font-bold text-center text-white mb-2">💳 Piani e Pricing</h2>
+            <p class="text-slate-400 text-center text-sm mb-8">Sblocca il massimo potenziale di ComplianceAI per il tuo business</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-slate-900/80 border border-emerald-500/50 rounded-2xl p-6 flex flex-col justify-between">
+                    <div>
+                        <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">Più Popolare</span>
+                        <h3 class="text-xl font-bold text-white mt-4">Piano Pro</h3>
+                        <div class="text-3xl font-extrabold text-emerald-400 mt-2">€49 <span class="text-slate-400 text-sm font-normal">/mese</span></div>
+                        <ul class="text-sm text-slate-300 space-y-2 my-6">
+                            <li>✔ Analisi illimitate di documenti PDF</li>
+                            <li>✔ Export automatico in PDF</li>
+                            <li>✔ Supporto ISO 27001, GDPR & D.Lgs 81/08</li>
+                            <li>✔ Storico sempre disponibile</li>
+                        </ul>
+                    </div>
+                    <button onclick="buyPlan('pro')" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 px-4 rounded-xl transition shadow-lg">
+                        Acquista Piano Pro
+                    </button>
+                </div>
+
+                <div class="bg-slate-900/80 border border-slate-700 rounded-2xl p-6 flex flex-col justify-between">
+                    <div>
+                        <span class="bg-slate-700 text-slate-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">Aziende</span>
+                        <h3 class="text-xl font-bold text-white mt-4">Piano Enterprise</h3>
+                        <div class="text-3xl font-extrabold text-white mt-2">€199 <span class="text-slate-400 text-sm font-normal">/mese</span></div>
+                        <ul class="text-sm text-slate-300 space-y-2 my-6">
+                            <li>✔ Tutto del piano Pro</li>
+                            <li>✔ Multi-utente e permessi aziendali</li>
+                            <li>✔ Personalizzazione report con Logo</li>
+                            <li>✔ Assistenza prioritaria h24</li>
+                        </ul>
+                    </div>
+                    <button onclick="buyPlan('enterprise')" class="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-xl transition">
+                        Acquista Enterprise
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
-        let currentAuthMode = 'login';
-        let authToken = localStorage.getItem('compliance_token');
-        let userEmail = localStorage.getItem('compliance_email');
+        const authToken = localStorage.getItem('compliance_token');
+        const userEmail = localStorage.getItem('compliance_email');
 
-        checkAuthState();
+        initUserStatus();
+        loadHistory();
 
-        function switchAuthTab(mode) {
-            currentAuthMode = mode;
-            document.getElementById('authError').classList.add('hidden');
-            if (mode === 'login') {
-                document.getElementById('tabLogin').className = "text-base font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1";
-                document.getElementById('tabRegister').className = "text-base font-bold text-slate-400 hover:text-white pb-1";
-                document.getElementById('authSubmitBtn').innerText = "Accedi";
-            } else {
-                document.getElementById('tabRegister').className = "text-base font-bold text-emerald-400 border-b-2 border-emerald-400 pb-1";
-                document.getElementById('tabLogin').className = "text-base font-bold text-slate-400 hover:text-white pb-1";
-                document.getElementById('authSubmitBtn').innerText = "Registrati";
+        async function initUserStatus() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isSuccess = urlParams.get('success');
+
+            if (isSuccess === 'true' && authToken) {
+                document.getElementById('paymentSuccessNotice').classList.remove('hidden');
+                await fetch('/confirm-payment', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
             }
-        }
 
-        document.getElementById('authForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('authEmail').value;
-            const password = document.getElementById('authPassword').value;
-            const endpoint = currentAuthMode === 'login' ? '/login' : '/register';
-
-            const formData = new FormData();
-            formData.append('email', email);
-            formData.append('password', password);
-
-            try {
-                const res = await fetch(endpoint, { method: 'POST', body: formData });
+            if (authToken) {
+                const res = await fetch('/user-status', {
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
                 const data = await res.json();
 
-                if (res.ok && data.token) {
-                    localStorage.setItem('compliance_token', data.token);
-                    localStorage.setItem('compliance_email', data.email);
-                    authToken = data.token;
-                    userEmail = data.email;
-                    checkAuthState();
+                const userHeader = document.getElementById('userHeader');
+                if (data.is_pro === 1) {
+                    document.getElementById('pricingSection').classList.add('hidden');
+                    userHeader.innerHTML = `<span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold px-2.5 py-1 rounded-full uppercase">PRO</span> <span class="text-slate-300 ml-2">${userEmail}</span>`;
                 } else {
-                    document.getElementById('authError').innerText = data.error || "Errore di autenticazione.";
-                    document.getElementById('authError').classList.remove('hidden');
+                    userHeader.innerHTML = `<span class="text-slate-300">${userEmail}</span>`;
                 }
-            } catch (err) {
-                document.getElementById('authError').innerText = "Errore di connessione.";
-                document.getElementById('authError').classList.remove('hidden');
             }
-        });
-
-        function logout() {
-            localStorage.removeItem('compliance_token');
-            localStorage.removeItem('compliance_email');
-            authToken = null;
-            userEmail = null;
-            checkAuthState();
-        }
-
-        function checkAuthState() {
-            const authBox = document.getElementById('authBox');
-            const userHeader = document.getElementById('userHeader');
-
-            if (authToken && userEmail) {
-                authBox.classList.add('hidden');
-                userHeader.innerHTML = `<span class="text-slate-300 mr-3">👤 ${userEmail}</span> <button onclick="logout()" class="bg-red-500/20 hover:bg-red-500/40 text-red-300 px-3 py-1 rounded transition text-xs font-semibold">Esci</button>`;
-            } else {
-                authBox.classList.remove('hidden');
-                userHeader.innerHTML = '<span class="text-slate-400 text-xs">(Ospite)</span>';
-            }
-            loadHistory();
         }
 
         document.getElementById('auditForm').addEventListener('submit', async (e) => {
@@ -213,15 +203,9 @@
             document.getElementById('resultContainer').classList.add('hidden');
             document.getElementById('errorBox').classList.add('hidden');
 
-            const headers = {};
-            if (authToken) {
-                headers['Authorization'] = 'Bearer ' + authToken;
-            }
-
             try {
                 const response = await fetch('/analyze', {
                     method: 'POST',
-                    headers: headers,
                     body: formData
                 });
 
@@ -255,18 +239,14 @@
         }
 
         async function loadHistory() {
-            const headers = {};
-            if (authToken) {
-                headers['Authorization'] = 'Bearer ' + authToken;
-            }
             try {
-                const res = await fetch('/history', { headers: headers });
+                const res = await fetch('/history');
                 if (!res.ok) return;
                 const list = await res.json();
                 const container = document.getElementById('historyTableContainer');
 
                 if (!Array.isArray(list) || list.length === 0) {
-                    container.innerHTML = `<p class="text-slate-400 text-sm text-center">Nessuna analisi salvata.</p>`;
+                    container.innerHTML = `<p class="text-slate-400 text-sm text-center">Nessuna analisi salvata nello storico.</p>`;
                     return;
                 }
 
@@ -314,6 +294,26 @@
                 window.scrollTo({ top: document.getElementById('resultContainer').offsetTop - 20, behavior: 'smooth' });
             } catch (err) {
                 showError("Errore nel recupero del report.");
+            }
+        }
+
+        async function buyPlan(planName) {
+            const formData = new FormData();
+            formData.append('plan', planName);
+
+            try {
+                const res = await fetch('/create-checkout-session', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.url) {
+                    window.location.href = data.url;
+                } else {
+                    alert("Errore nell'avvio del pagamento Stripe.");
+                }
+            } catch (err) {
+                alert("Errore di connessione con Stripe.");
             }
         }
 
